@@ -1,0 +1,105 @@
+/*
+ * Device Tree Source for MA35D1
+ *
+ * Copyright (C) 2020 Nuvoton Technology Corp.
+ *
+ * The code contained herein is licensed under the GNU General Public
+ * License. You may obtain a copy of the GNU General Public License
+ * Version 2 or later at the following locations:
+ *
+ * http://www.opensource.org/licenses/gpl-license.html
+ * http://www.gnu.org/copyleft/gpl.html
+ */
+/dts-v1/;
+
+#include <dt-bindings/clock/ma35d1-clk.h>
+#include "../plat/nuvoton/ma35d1/include/sspcc.h"
+
+/{
+	compatible = "nuvoton,ma35d1";
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	clk: clock-controller@40460200 {
+		compatible = "nuvoton,ma35d1-clk", "syscon", "simple-mfd";
+		#clock-cells = <1>;
+		assigned-clocks = <&clk capll>, <&clk syspll>,
+				<&clk ddrpll>, <&clk apll>,
+				<&clk epll>, <&clk vpll>;
+		assigned-clock-rates =<800000000>, <180000000>,
+				<266000000>, <200000000>,
+				<500000000>, <150000000>;
+		clock-pll-mode = <0>, <0>, <1>, <0>, <0>, <0>;
+		lxt-enable = <1>;
+		/* rtc power control */
+		rtc-pwrctl-enable = <1>;
+	};
+
+	qspi0: qspi@40680000 {
+		compatible = "nuvoton,ma35d1-qspi";
+
+		/* spi information */
+		spi-image-offset = <0x100000>;
+		spi-quad-read-cmd = <0x6B>;
+		spi-status-read-cmd = <0x05>;
+		spi-status-write-cmd = <0x01>;
+		spi-status = <0x02>;
+		spi-dummy1 = <0>;
+		spi-dummy2 = <0x01>;
+		spi-suspend-interval = <0x01>;
+
+		/* spi-nand information */
+		spinand-page-size = <2048>;
+		spinand-oob-size = <64>;
+		spinand-page-count = <64>;
+		spinand-block-count = <4096>;
+	};
+
+	nand: nand@401A0000 {
+		compatible = "nuvoton,ma35d1-nand";
+
+		nand-on-flash-bbt;
+		/* nand information */
+		nand-ecc-strength = <8>;
+		nand-ecc-step-size = <512>;
+		nand-page-size = <2048>;
+		nand-oob-size = <64>;
+		nand-page-count = <64>;
+		nand-block-count = <8192>;
+		nand-image-offset = <0x100000>;
+	};
+
+	sdhci0: sdhci@40180000 {
+		compatible = "snps,dwcmshc-sdhci0";
+		bus-width = <4>;
+		/* sdhc information */
+		mmc-image-offset = <0xc0000>;
+	};
+
+	sdhci1: sdhci@40190000 {
+		compatible = "snps,dwcmshc-sdhci1";
+		bus-width = <4>;
+		/* sdhc information */
+		mmc-image-offset = <0xc0000>;
+	};
+
+	sspcc: sspcc@404F0000 {
+		compatible = "nuvoton,ma35d1-sspcc";
+		reg = <0x0 0x404F0000 0x0 0x1000>;
+		config = <UART0_TZNS>,
+			<SDH0_TZNS>,
+			<SDH1_TZNS>,
+			<NAND_TZNS>,
+			<QSPI0_TZNS>,
+			<CRYPTO_TZNS>,
+			<WDTWWDT1_TZNS>,
+			<HSUSBD_TZNS>,
+			<PDMA0_TZNS>,
+			<PDMA1_TZNS>,
+			<TIMER01_TZNS>,
+			<UART16_SUBM>,
+			<I2S1_SUBM>,
+			<PDMA2_SUBM>,
+			<TRNG_TZNS>;
+	};
+};

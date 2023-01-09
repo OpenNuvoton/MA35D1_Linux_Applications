@@ -1,0 +1,22 @@
+<RCC>
+    <qresource prefix="/Pics">
+        <file>Pics/PASS.png</file>
+        <file>Pics/FAIL.png</file>
+        <file>Pics/secure_demo.png</file>
+        <file>Pics/Menu_button_VoIP.png</file>
+        <file>Pics/Menu_button_Video.png</file>
+        <file>Pics/Menu_button_Security.png</file>
+        <file>Pics/Menu_button_KWS.png</file>
+        <file>Pics/Menu_button_Cam.png</file>
+        <file>Pics/Menu_button_2D.png</file>
+        <file>Pics/Menu_BG.jpg</file>
+        <file>Pics/Menu_button_VoIP_pressed.png</file>
+        <file>Pics/Menu_button_Security_pressed.png</file>
+        <file>Pics/Menu_button_Cam_Pressed.png</file>
+        <file>Pics/Menu_button_Video_pressed.png</file>
+        <file>Pics/Menu_button_KWS_pressed.png</file>
+        <file>Pics/Menu_button_2D_pressed.png</file>
+        <file>Pics/MA35D1_EVB Demo Menu/Nuvoton_Logo.png</file>
+        <file>Pics/Nuvoton_Logo.png</file>
+    </qresource>
+</RCC>
