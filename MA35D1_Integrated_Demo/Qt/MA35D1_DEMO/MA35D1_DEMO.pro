@@ -64,7 +64,6 @@ DISTFILES += \
 #LIBS += -L/usr/local/lib -lopencv_core -lopencv_imgcodecs -lopencv_highgui -lopencv_features2d -lopencv_imgproc -lopencv_objdetect -lopencv_dnn
 
 #FOR ARM BASE
-INCLUDEPATH += ./include/opencv
 LIBS += -L ./lib -lopencv_core -lopencv_imgcodecs -lopencv_highgui -lopencv_features2d -lopencv_imgproc -lopencv_objdetect -lopencv_dnn
 
 RESOURCES += \

@@ -18,11 +18,14 @@
 #include "mtcnn/detector.h"
 #include "draw.hpp"
 
+#define NORMAL_DETECTION_X (640)
+#define NORMAL_DETECTION_Y (480)
+
 #define FRAME_DETECTION_X (160)
 #define FRAME_DETECTION_Y (120)
 
 #define PEOPLECNT_RESOLUTION (FRAME_DETECTION_X*FRAME_DETECTION_Y)
-#define NORMAL_RESOLUTION ((FRAME_DETECTION_X*4)*(FRAME_DETECTION_Y*4))
+#define NORMAL_RESOLUTION (NORMAL_DETECTION_X*NORMAL_DETECTION_Y)
 
 using namespace std;
 using namespace cv;
@@ -286,7 +289,7 @@ inline int Dialog_Cam::find_resolution_idx(int resolution){
         if(msize.width()*msize.height() <= resolution)
             ret++;
     }
-    return ret;
+    return ret==-1 ? 0 : ret;
 }
 
 void Dialog_Cam::setfblComobox(){
@@ -305,11 +308,12 @@ void Dialog_Cam::setfblComobox(){
 		return;
 
     int idx = find_resolution_idx(NORMAL_RESOLUTION);
-    idx_resolution_display = idx;
     if(idx<0){
         qDebug()<<"idx error";
         return;
     }
+    idx_resolution_display = idx;
+
 	box->setCurrentIndex(idx);
 	QCameraViewfinderSettings set;
 	set.setResolution(mResSize[idx]);
@@ -375,7 +379,7 @@ int Dialog_Cam::face_detect_alg(){
 	cv::Mat image;
 
     b_facedetect_done = false;
-    frame_capture =  frame_capture.scaled ( FRAME_DETECTION_X , FRAME_DETECTION_Y , Qt :: KeepAspectRatio , Qt :: SmoothTransformation );
+    frame_capture =  frame_capture.scaled (mResSize[idx_resolution_facedetect].width() , mResSize[idx_resolution_facedetect].height() , Qt :: KeepAspectRatio , Qt :: SmoothTransformation );
     image = QPixmapToCvMat( frame_capture, true );
 	MTCNNDetector detector(pConfig, rConfig, oConfig);
     std::vector<Face> faces;
