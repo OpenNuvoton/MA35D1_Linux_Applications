@@ -45,16 +45,20 @@
 #include "parser.h"
 #include "dcfb.h"
 
-/* This is the size of the buffer for the compressed stream.
- * It limits the maximum compressed frame size. */
+/*
+ * This is the size of the buffer for the compressed stream.
+ * It limits the maximum compressed frame size.
+ */
 #define STREAM_BUUFER_SIZE	(1024 * 1024)
 
 /* The number of compress4ed stream buffers */
 #define STREAM_BUFFER_CNT	2
 
-/* The number of extra buffers for the decoded output.
+/*
+ * The number of extra buffers for the decoded output.
  * This is the number of buffers that the application can keep
- * used and still enable video device to decode with the hardware. */
+ * used and still enable video device to decode with the hardware.
+ */
 #define RESULT_EXTRA_BUFFER_CNT 2
 
 struct instance inst;
@@ -63,41 +67,45 @@ struct instance inst;
 #define LCD_HEIGHT	600
 
 dc_frame_info UserFrameBufferSize = {
-    .width = LCD_WIDTH,
-    .height = LCD_HEIGHT,
-    .stride = 4096,
+	.width = LCD_WIDTH,
+	.height = LCD_HEIGHT,
+	.stride = 4096,
 };
-
-char *UserMemFb = NULL;
 
 /*
  *  V4L2 device default ioctl for VC8K
  */
 struct vc8k_pp_params {
-	int   enable_pp;
-	void  *frame_buf_vaddr;          /* virtual address of frame buffer           */
-	int   frame_buff_size;
-	int   frame_buf_w;               /* width of frame buffer width               */
-	int   frame_buf_h;               /* height of frame buffer                    */
-	int   img_out_x;                 /* image original point(x,y) on frame buffer */
-	int   img_out_y;                 /* image original point(x,y) on frame buffer */
-	int   img_out_w;                 /* image output width on frame buffer        */
-	int   img_out_h;                 /* image output height on frame buffer       */
-	int   img_out_fmt;               /* image output format                       */
-	int   rotation;
+	int enable_pp;
+	__u32 frame_buf_paddr;	/* physical address of frame buffer          */
+	int frame_buff_size;
+	int frame_buf_w;	/* width of frame buffer width               */
+	int frame_buf_h;	/* height of frame buffer                    */
+	int img_out_x;		/* image original point(x,y) on frame buffer */
+	int img_out_y;		/* image original point(x,y) on frame buffer */
+	int img_out_w;		/* image output width on frame buffer        */
+	int img_out_h;		/* image output height on frame buffer       */
+	int img_out_fmt;	/* image output format                       */
+	int rotation;
+	int pp_out_dst;		/* PP output destination.                    */
+				/* 0: fb0                                    */
+				/* 1: fb1                                    */
+				/* otherwise: frame_buf_paddr                */
+	int libjpeg_mode;	/* 0: v4l2-only; 1: libjpeg+v4l2             */
+	int resserved[8];
 };
 
-#define VC8KIOC_PP_SET_CONFIG	_IOW ('v', 91, struct vc8k_pp_params)
-#define VC8KIOC_PP_GET_CONFIG	_IOW ('v', 92, struct vc8k_pp_params)
+#define VC8KIOC_PP_SET_CONFIG	_IOW('v', 91, struct vc8k_pp_params)
+#define VC8KIOC_PP_GET_CONFIG	_IOW('v', 92, struct vc8k_pp_params)
 
 struct vc8k_pp_params  pp;
 
-#define PP_ROTATION_NONE                                0U
-#define PP_ROTATION_RIGHT_90                            1U
-#define PP_ROTATION_LEFT_90                             2U
-#define PP_ROTATION_HOR_FLIP                            3U
-#define PP_ROTATION_VER_FLIP                            4U
-#define PP_ROTATION_180                                 5U
+#define PP_ROTATION_NONE	0U
+#define PP_ROTATION_RIGHT_90	1U
+#define PP_ROTATION_LEFT_90	2U
+#define PP_ROTATION_HOR_FLIP	3U
+#define PP_ROTATION_VER_FLIP	4U
+#define PP_ROTATION_180		5U
 
 static int handle_v4l_events(struct video *vid)
 {
@@ -119,13 +127,13 @@ static int handle_v4l_events(struct video *vid)
 		dbg("Setting changed sufficient\n");
 		break;
 	case V4L2_EVENT_MSM_VIDC_FLUSH_DONE:
-		dbg("Flush Done Recieved \n");
+		dbg("Flush Done Recieved\n");
 		break;
 	case V4L2_EVENT_MSM_VIDC_CLOSE_DONE:
-		dbg("Close Done Recieved \n");
+		dbg("Close Done Recieved\n");
 		break;
 	case V4L2_EVENT_MSM_VIDC_SYS_ERROR:
-		dbg("SYS Error Recieved \n");
+		dbg("SYS Error Recieved\n");
 		break;
 	default:
 		dbg("unknown event type occurred %x\n", event.type);
@@ -137,16 +145,14 @@ static int handle_v4l_events(struct video *vid)
 
 void cleanup(struct instance *i)
 {
-	printf("cleanup called.\n");
+	printf("%s called.\n", __func__);
 	if (i->video.fd)
 		video_close(i);
 	if (i->in.fd)
 		input_close(i);
 
-	if (i->fb.fd) {
-		munmap(pp.frame_buf_vaddr, pp.frame_buff_size);
+	if (i->fb.fd)
 		close(i->fb.fd);
-	}
 }
 
 void sig_handler(int signo)
@@ -192,8 +198,10 @@ int extract_and_process_header(struct instance *i)
 	return 0;
 }
 
-/* This threads is responsible for parsing the stream and
- * feeding video decoder with consecutive frames to decode */
+/*
+ * This threads is responsible for parsing the stream and
+ * feeding video decoder with consecutive frames to decode
+ */
 void *parser_thread_func(void *args)
 {
 	struct instance *i = (struct instance *)args;
@@ -212,9 +220,9 @@ void *parser_thread_func(void *args)
 
 		if (n < vid->out_buf_cnt && !i->parser.finished) {
 
-			//printf("%s %d, n = %d, %d, %d, offset=0x%x, left=%d\n", 
-			//	__func__, __LINE__, n, vid->out_buf_cnt, i->parser.finished, 
-			//	i->in.offs, i->in.size - i->in.offs);		
+			//printf("%s %d, n = %d, %d, %d, offset=0x%x, left=%d\n",
+			//	__func__, __LINE__, n, vid->out_buf_cnt, i->parser.finished,
+			//	i->in.offs, i->in.size - i->in.offs);
 
 			ret = i->parser.func(&i->parser.ctx,
 					     i->in.p + i->in.offs,
@@ -330,7 +338,7 @@ next_event:
 int fb_open(struct instance *i, char *name)
 {
 	struct fb_var_screeninfo FBVar;
-	int  ret;
+	int ret;
 
 	i->fb.fd = open(name, O_RDWR, 0);
 	if (i->fb.fd < 0) {
@@ -340,31 +348,26 @@ int fb_open(struct instance *i, char *name)
 
 	ret = ioctl(i->fb.fd, FBIOGET_VSCREENINFO, &FBVar);
 	if (ret < 0) {
-	    printf("FBIOGET_VSCREENINFO failed!\n");
-	    return -1;
+		printf("FBIOGET_VSCREENINFO failed!\n");
+		return -1;
 	}
 
 	ret = ioctl(i->fb.fd, ULTRAFBIO_BUFFER_SIZE, &UserFrameBufferSize);
 	if (ret < 0) {
-	    printf("ULTRAFBIO_BUFFER_SIZE set buffer size error\n");
-	    return -1;
+		printf("ULTRAFBIO_BUFFER_SIZE set buffer size error\n");
+		return -1;
 	}
 
 	ret = ioctl(i->fb.fd, FBIOPUT_VSCREENINFO, &FBVar);
 	if (ret != 0) {
-	    printf("FBIOPUT_VSCREENINFO failed!\n");
-	    return -1;
+		printf("FBIOPUT_VSCREENINFO failed!\n");
+		return -1;
 	}
 
-        pp.frame_buff_size = LCD_WIDTH * LCD_HEIGHT * 2;
-        pp.frame_buf_vaddr = mmap(NULL, pp.frame_buff_size, PROT_READ|PROT_WRITE, MAP_SHARED, i->fb.fd, 0);
-        if (pp.frame_buf_vaddr == MAP_FAILED) {
-                printf("mmap() failed\n");
-                return -1;
-        }
+	pp.frame_buff_size = LCD_WIDTH * LCD_HEIGHT * 2;
 
 	return 0;
-}	
+}
 
 int main(int argc, char **argv)
 {
@@ -379,7 +382,7 @@ int main(int argc, char **argv)
 		printf("Failed to catach CTRL-C signal!\n");
 		return -1;
 	}
-	
+
 	ret = parse_args(&inst, argc, argv);
 	if (ret) {
 		print_usage(argv[0]);
@@ -398,11 +401,11 @@ int main(int argc, char **argv)
 		pp.enable_pp = true;
 	else
 		pp.enable_pp = false;
-	// pp.frame_buf_vaddr = 0x8ca60000;
+
 	pp.frame_buf_w = LCD_WIDTH;
 	pp.frame_buf_h = LCD_HEIGHT;
 	pp.img_out_x = inst.x_pos;
-	pp.img_out_y = inst.y_pos;;
+	pp.img_out_y = inst.y_pos;
 	pp.img_out_w = inst.width;
 	pp.img_out_h = inst.height;
 	pp.rotation = PP_ROTATION_NONE;
@@ -417,20 +420,20 @@ int main(int argc, char **argv)
 	ret = ioctl(vid->fd, VC8KIOC_PP_SET_CONFIG, pp);
 	if (ret < 0) {
 		err("VC8KIOC_PP_SET_CONFIG failed (%s)", strerror(errno));
+		err("VC8KIOC_PP_SET_CONFIG failed (%s)", strerror(errno));
 		goto err;
 	}
-	
+
 	if (pp.enable_pp == false) {
 		printf("VC8000 PP is disabled.\n");
 		video_close(&inst);
 		return 0;
 	}
-	
+
 	video_stop(&inst);
 
-	if (inst.config_only) {
+	if (inst.config_only)
 		printf("Only used to config VC8000 PP and open fbdev. Expected to run in background.\n");
-	}
 
 	ret = fb_open(&inst, inst.fb.name);
 	if (ret)
@@ -452,12 +455,6 @@ int main(int argc, char **argv)
 	ret = video_setup_capture(&inst, 0, inst.width, inst.height);
 	if (ret)
 		goto err;
-
-#if 0  // ychuang - skip
-	ret = video_set_control(&inst);
-	if (ret)
-		goto err;
-#endif		
 
 	ret = extract_and_process_header(&inst);
 	if (ret)
