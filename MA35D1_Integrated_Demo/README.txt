@@ -23,3 +23,11 @@ bitbake nvt-image-qt5
  
 Qt/MA35D1_DEMO:
 Application Source code
+
+toolchain for compiling MA35D1_DEMO source code:
+Refer to Chapter "Setup Compiler by Yocto" in https://www.nuvoton.com/export/resource-files/en-us--MA35D1_Yocto_Quick_Start_Rev1.00.pdf to setup the compiler for MA35
+
+Add opencv into toolchain:
+Unzip toolchain/opencv2.zip to /usr/local/oecore-x86_64/sysroots/aarch64-poky-linux/usr/local/include/
+Unzip toolchain/lib.zip to /usr/local/oecore-x86_64/sysroots/aarch64-poky-linux/usr/local/
+
