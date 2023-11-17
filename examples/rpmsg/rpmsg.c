@@ -37,6 +37,7 @@ struct rpmsg_endpoint_info {
 
 #define RPMSG_CREATE_EPT_IOCTL	_IOW(0xb5, 0x1, struct rpmsg_endpoint_info)
 #define RPMSG_DESTROY_EPT_IOCTL	_IO(0xb5, 0x2)
+#define STOPCODE "TERMINATE";
 
 int fd[2];
 
@@ -50,6 +51,19 @@ static int rpmsg_create_ept(int rpfd, struct rpmsg_endpoint_info *eptinfo)
 	return ret;
 }
 
+void sig_handler(int signo)
+{
+	int ret;
+	unsigned char Tx_Buffer[10] = STOPCODE;
+	if (signo == SIGINT) {
+		ret = write(fd[1], Tx_Buffer, 10);
+		if (ret < 0) {
+			printf("\n Failed to write \n");
+			while(1);
+		}
+		printf("\nSIGINT signal catched!\n");
+	}
+}
 
 /**
 *@breif 	main()
@@ -64,6 +78,11 @@ int main(int argc, char **argv)
 	int err;
 	unsigned char Tx_Buffer[130];
 	unsigned char Rx_Buffer[130];
+
+	if (signal(SIGINT, sig_handler) == SIG_ERR) {
+		printf("Failed to catach CTRL-C signal!\n");
+		return -1;
+	}
 
 	printf("\n demo rpmsg \n");
 
@@ -138,10 +157,11 @@ int main(int argc, char **argv)
 		};
 
 		while(1) {
-			err = poll(fds, 1, 10000);
-
-			if ((err == -1) || (err == 0)) {
+			err = poll(fds, 1, 1000);
+			if (err == -1) {
 				printf("\n r=%d ", err);
+			} else if (err == 0) {
+				return 0;
 			} else {
 				break;
 			}
@@ -149,8 +169,7 @@ int main(int argc, char **argv)
 
 		rev1 = read(fd[1], Rx_Buffer, 128);
 		if (rev1 < 0) {
-			printf("\n Failed to write \n");
-			while(1);
+			printf("\n Failed to read \n");
 		}
 
 		printf("\n Receive %d bytes data from RTP: \n", rev1);
