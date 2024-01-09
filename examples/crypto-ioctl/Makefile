@@ -4,7 +4,7 @@ CC := aarch64-linux-gnu-gcc
 STRIP := aarch64-linux-gnu-strip
 
 TARGET = crypto-ioctl
-SRCS := crypto-ioctl.c 
+SRCS := crypto-ioctl.c crypto-ecc-ks.c
 LIBS = -lpthread -lc -lgcc
 
 all:

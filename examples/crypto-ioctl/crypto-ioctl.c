@@ -17,51 +17,7 @@
 #include <sys/time.h>
 #include <sys/ioctl.h>
 
-#define NVT_ECC          "/dev/nuvoton-ecc"
-#define NVT_RSA          "/dev/nuvoton-rsa"
-
-typedef unsigned char   u8;
-
-#define CRYPTO_IOC_MAGIC	  'C'
-#define RSA_IOC_SET_BITLEN	  _IOW(CRYPTO_IOC_MAGIC, 20, unsigned long)
-#define RSA_IOC_SET_N		  _IOW(CRYPTO_IOC_MAGIC, 21, u8 *)
-#define RSA_IOC_SET_E		  _IOW(CRYPTO_IOC_MAGIC, 22, u8 *)
-#define RSA_IOC_SET_M		  _IOW(CRYPTO_IOC_MAGIC, 23, u8 *)
-#define RSA_IOC_SET_P		  _IOW(CRYPTO_IOC_MAGIC, 24, u8 *)
-#define RSA_IOC_SET_Q		  _IOW(CRYPTO_IOC_MAGIC, 25, u8 *)
-#define RSA_IOC_RUN		  _IOW(CRYPTO_IOC_MAGIC, 29, u8 *)
-
-#define ECC_IOC_SET_CURVE         _IOW(CRYPTO_IOC_MAGIC, 50, int)
-#define ECC_IOC_SET_PRIV_KEY      _IOW(CRYPTO_IOC_MAGIC, 51, u8 *)
-#define ECC_IOC_SET_PUB_KEY       _IOW(CRYPTO_IOC_MAGIC, 52, u8 *)
-#define ECC_IOC_POINT_MUL         _IOW(CRYPTO_IOC_MAGIC, 55, u8 *)
-
-enum {
-	CURVE_P_192  = 0x01,
-	CURVE_P_224  = 0x02,
-	CURVE_P_256  = 0x03,
-	CURVE_P_384  = 0x04,
-	CURVE_P_521  = 0x05,
-	CURVE_K_163  = 0x11,
-	CURVE_K_233  = 0x12,
-	CURVE_K_283  = 0x13,
-	CURVE_K_409  = 0x14,
-	CURVE_K_571  = 0x15,
-	CURVE_B_163  = 0x21,
-	CURVE_B_233  = 0x22,
-	CURVE_B_283  = 0x23,
-	CURVE_B_409  = 0x24,
-	CURVE_B_571  = 0x25,
-	CURVE_KO_192 = 0x31,
-	CURVE_KO_224 = 0x32,
-	CURVE_KO_256 = 0x33,
-	CURVE_BP_256 = 0x41,
-	CURVE_BP_384 = 0x42,
-	CURVE_BP_512 = 0x43,
-	CURVE_SM2_256 = 0x50,
-	CURVE_25519  = 0x51,
-	CURVE_UNDEF,
-};
+#include "crypto-ioctl.h"
 
 struct rsa_tv_t {
 	int	bitlen;		/* should be 1024, 2048, 3072, or 4096 */
@@ -341,110 +297,167 @@ struct rsa_tv_t rsa_vectors[] = {
 
 struct ecc_tv_t {
 	char	name[32];
-	int	curve;		/* should be 1024, 2048, 3072, or 4096 */
+	int	curve;
 	int	keylen;
-	u8	d[160];
-	u8	Qx[160];
-	u8	Qy[160];	/* public key  */
+	u8	d[160];		/* private key */
+	u8	Qx[160];	/* public key X */
+	u8	Qy[160];	/* public key Y */
+	u8	ans_x[160];
+	u8	ans_y[160];
 } ;
-
 
 struct ecc_tv_t ecc_vectors[] = {
 {
 	"P-192", CURVE_P_192, 192,
 	"e5ce89a34adddf25ff3bf1ffe6803f57d0220de3118798ea",
+	"188da80eb03090f67cbf20eb43a18800f4ff0afd82ff1012",
+	"07192b95ffc8da78631011ed6b24cdd573f977a11e794811",
 	"8abf7b3ceb2b02438af19543d3e5b1d573fa9ac60085840f",
 	"a87f80182dcd56a6a061f81f7da393e7cffd5e0738c6b245"
 },
 {
 	"P-224", CURVE_P_224, 224,
 	"e7c92383846a4e6887a10498d8eaca2bd0487d985bd7d3f92ce3ab30",
+	"b70e0cbd6bb4bf7f321390b94a03c1d356c21122343280d6115c1d21",
+	"bd376388b5f723fb4c22dfe6cd4375a05a07476444d5819985007e34",
 	"0a3682d2aaa4dd931bee042d32e95755507ab164b12f84843f4b7b96",
 	"a6313a938eff7a293222e0e3c7b4c6132489b33255a61c3fc1ce2256"
 },
 {
 	"P-256", CURVE_P_256, 256,
 	"c9806898a0334916c860748880a541f093b579a9b1f32934d86c363c39800357",
+	"6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296",
+	"4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
 	"d0720dc691aa80096ba32fed1cb97c2b620690d06de0317b8618d5ce65eb728f",
 	"9681b517b1cda17d0d83d335d9c4a8a9a9b0b1b3c7106d8f3c72bc5093dc275f"
 },
 {
 	"P-384", CURVE_P_384, 384,
 	"5394f7973ea868c52bf3ff8d8ceeb4db90a683653b12485d5f627c3ce5abd8978fc9673d14a71d925747931662493c37",
+	"aa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab7",
+	"3617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7e819d7a431d7c90ea0e5f",
 	"fd3c84e5689bed270e601b3d80f90d67a9ae451cce890f53e583229ad0e2ee645611fa9936dfa45306ec18066774aa24",
 	"b83ca4126cfc4c4d1d18a4b6c21c7f699d5123dd9c24f66f833846eeb58296196b42ec06425db5b70a4b81b7fcf705a0"
 },
 {
+	"P-256", CURVE_P_256, 256,
+	"c9806898a0334916c860748880a541f093b579a9b1f32934d86c363c39800357",
+	"6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296",
+	"4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+	"d0720dc691aa80096ba32fed1cb97c2b620690d06de0317b8618d5ce65eb728f",
+	"9681b517b1cda17d0d83d335d9c4a8a9a9b0b1b3c7106d8f3c72bc5093dc275f"
+},
+{
 	"P-521", CURVE_P_521, 521,
 	"184258ea667ab99d09d4363b3f51384fc0acd2f3b66258ef31203ed30363fcda7661b6a817daaf831415a1f21cb1cda3a74cc1865f2ef40f683c14174ea72803cff",
+	"0c6858e06b70404e9cd9e3ecb662395b4429c648139053fb521f828af606b4d3dbaa14b5e77efe75928fe1dc127a2ffa8de3348b3c1856a429bf97e7e31c2e5bd66",
+	"11839296a789a3bc0045c8a5fb42c7d1bd998f54449579b446817afbd17273e662c97ee72995ef42640c550b9013fad0761353c7086a272c24088be94769fd16650",
 	"19ee818048f86ada6db866b7e49a9b535750c3673cb61bbfe5585c2df263860fe4d8aa8f7486aed5ea2a4d733e346eaefa87ac515c78b9a986ee861584926ce4860",
 	"1b6809c89c0aa7fb057a32acbb9ab4d7b06ba39dba8833b9b54424add2956e95fe48b7fbf60c3df5172bf386f2505f1e1bb2893da3b96d4f5ae78f2544881a238f7"
 },
 {
 	"K-163", CURVE_K_163, 163,
 	"28a7447f95b43c072722ee52f2a68897518830272",
+	"2fe13c0537bbc11acaa07d793de4e6d5e5c94eee8",
+	"289070fb05d38ff58321f2e800536d538ccdaa3d9",
 	"72dadf24b00f9a2a0ad6fbfb9d86181e939900174",
 	"4bc1d4987dde0d2f633df16d686e2a78d6d3f49f3"
 },
 {
 	"K-233", CURVE_K_233, 233,
 	"1da7422b50e3ff051f2aaaed10acea6cbf6110c517da2f4eaca8b5b87",
+	"17232ba853a7e731af129f22ff4149563a419c26bf50a4c9d6eefad6126",
+	"1db537dece819b7f70f555a67c427a8cd9bf18aeb9b56e0c11056fae6a3",
 	"1c7475da9a161e4b3f7d6b086494063543a979e34b8d7ac44204d47bf9f",
 	"131cbd433f112871cc175943991b6a1350bf0cdd57ed8c831a2a7710c92"
 },
 {
 	"K-283", CURVE_K_283, 283,
 	"1de6fc561ce8c3ec9a7c03a51e0c61204991f8caca8c7b073cd07945ffb22c48c30e5d4",
+	"503213f78ca44883f1a3b8162f188e553cd265f23c1567a16876913b0c2ac2458492836",
+	"1ccda380f1c9e318d90f95d07e5426fe87e45c0e8184698e45962364e34116177dd2259",
 	"21e41033585949f5bf30a73d935c580946c3f15b942b42b54e3397fc4115ee96bbbcff0",
 	"50789e0c1dacaebb72d7fe27081b2048a8fac3a58693e52807b8c346930b5c4deb549cb"
 },
 {
 	"K-409", CURVE_K_409, 409,
 	"190c5a00374cc3254fdd421c8e52b0cb0f00317bbfb4153195eb6195557989b8e78b27df35c8f47bb4b4ee4608ea04f2adb72",
+	"060f05f658f49c1ad3ab1890f7184210efd0987e307c84c27accfb8f9f67cc2c460189eb5aaaa62ee222eb1b35540cfe9023746",
+	"1e369050b7c4e42acba1dacbf04299c3460782f918ea427e6325165e9ea10e3da5f6c42e9c55215aa9ca27a5863ec48d8e0286b",
 	"0415d296d3d421801dd4ef870cdd234220af52c896f2d8e70c368622167655d45ab7db524552f7aeb9c1159bcac10f24b9b1864",
 	"00f824d69ec629e2dabd323cfc93992f253c901ada1427967e591ca0e0970ae7ed35e252159255a3bdbf21d09b0c7bfeb72626a"
 },
 {
 	"K-571", CURVE_K_571, 571,
 	"4b7223994f77708dbefe1e76fedb6279710b8769933f87d12d4304bac646fc453055632beb70f87c6bcf6f28fcccba25088789d1f15013f25320ff09321e921eb3e66b0829e87c",
+	"26eb7a859923fbc82189631f8103fe4ac9ca2970012d5d46024804801841ca44370958493b205e647da304db4ceb08cbbd1ba39494776fb988b47174dca88c7e2945283a01c8972",
+	"349dc807f4fbf374f4aeade3bca95314dd58cec9f307a54ffc61efc006d8a2c9d4979c0ac44aea74fbebbb9f772aedcb620b01a7ba7af1b320430c8591984f601cd4c143ef1c7a3",
 	"23691a3028fc2ea92f707f13c61953ebf411a247739f225f21878fa786e416c5aac32a5d73368bf3ca350f1e05022d17093dc318b42e5fa7234e32f959f20146da2165db36230c0",
 	"0fd2635485e32d637bfd8f53ff600b9b2bcc6d79884be54dc50103e25c460d41c8d502d7927bb19adfb2cd59a83ec92f4186ac5c75014d3946f4a2a725d3324f6dc206197d19d79"
 },
 {
 	"B-163", CURVE_B_163, 163,
 	"25d594310681b01fd63333cdd4315e54e18fe2623",
+	"3f0eba16286a2d57ea0991168d4994637e8343e36",
+	"0d51fbc6c71a0094fa2cdd545b11c5c0c797324f1",
 	"07e7162c48dcab690aa9ef76d2ed066cedae33364",
 	"08cc32f4b5a88985c6e0c418e4abe988d5375371d"
 },
 {
 	"B-233", CURVE_B_233, 233,
 	"1e0da3dca621aab89a54e9528937ca7567464e6e783357878c1ecef15c",
+	"0fac9dfcbac8313bb2139f1bb755fef65bc391f8b36f8f8eb7371fd558b",
+	"1006a08a41903350678e58528bebf8a0beff867a7ca36716f7e01f81052",
 	"0bf1e4d6ad911b7d4cfdfc990132b1e23bd279f4692bbac82e9e8b80dd4",
 	"06c2a7599c395b8cc01b29b33ad6808361a7417d0dd7bd478a4a4783446"
 },
 {
 	"B-283", CURVE_B_283, 283,
 	"10d57c6f40baac97852771cee44a04137fb0ae504df7d6bb4153e5f13678f511520d47",
+	"5f939258db7dd90e1934f8c70b0dfec2eed25b8557eac9c80e2e198f8cdbecd86b12053",
+	"3676854fe24141cb98fe6d4b20d02b4516ff702350eddb0826779c813f0df45be8112f4",
 	"5c555fecdea33c76bbc3498a2cf3f64eda57f3bedc9579439162a736953d25d16ffb6a3",
 	"08808d8babe945f2f0040f70c9f10714b8852179314d17f8f1cef8164fe5d1705e33eff"
 },
 {
 	"B-409", CURVE_B_409, 409,
 	"ebd71c6f6a42bb485480526d916977665df53c198dbd027e2a36ddd4e1178bed069ca6758d0069098301e9ef89dc545ce9c691",
+	"15d4860d088ddb3496b0c6064756260441cde4af1771d4db01ffe5b34e59703dc255a868a1180515603aeab60794e54bb7996a7",
+	"061b1cfab6be5f32bbfa78324ed106a7636b9c5a7bd198d0158aa4f5488d08f38514f1fdf4b4f40d2181b3681c364ba0273c706",
 	"1fc79d655eb2f07e8127fb0857de31fadb25afc04ea340fa448d669439e7519a3487c7601875d1f3431d3707a5a36de3532408d",
 	"19a4dae9a205ead5fc6dac8b84f7b8846667b1853d02bfd696115f266b380b5be63eb684a46fb3536f9c44ac33cb5aa32000246"
 },
 {
 	"B-571", CURVE_B_571, 571,
 	"1443e93c7ef6802655f641ecbe95e75f1f15b02d2e172f49a32e22047d5c00ebe1b3ff0456374461360667dbf07bc67f7d6135ee0d1d46a226a530fefe8ebf3b926e9fbad8d57a6",
+	"303001d34b856296c16c0d40d3cd7750a93d1d2955fa80aa5f40fc8db7b2abdbde53950f4c0d293cdd711a35b67fb1499ae60038614f1394abfa3b4c850d927e1e7769c8eec2d19",
+	"37bf27342da639b6dccfffeb73d69d78c6c27a6009cbbca1980f8533921e8a684423e43bab08a576291af8f461bb2a8b3531d2f0485c19b16e2f1516e23dd3c1a4827af1b8ac15b",
 	"53e3710d8e7d4138db0a369c97e5332c1be38a20a4a84c36f5e55ea9fd6f34545b864ea64f319e74b5ee9e4e1fa1b7c5b2db0e52467518f8c45b658824871d5d4025a6320ca06f8",
 	"3a22cfd370c4a449b936ae97ab97aab11c57686cca99d14ef184f9417fad8bedae4df8357e3710bcda1833b30e297d4bf637938b995d231e557d13f062e81e830af5ab052208ead"
 },
 {
 	"SM2", CURVE_SM2_256, 256,
 	"bdca6455a55b9c2722d0f580f7f3c5633cbfcee85517aaa57f119b4b25569b43",
+	"32C4AE2C1F1981195F9904466A39C9948FE30BBFF2660BE1715A4589334C74C7",
+	"BC3736A2F4F6779C59BDCEE36B692153D0A9877CC62A474002DF32E52139F0A0",
 	"8a689f2ea87a601cdba2cd46e0862d66deb48ff1c636d068ed1ddbe47201bbdd",
 	"02be58c5acc94fa3fb82e1cbd220172f1f304bdd89ab7e294a4f672c04eb3de4"
+},
+{
+	"P-256", CURVE_P_256, 256,
+	"b0ccae742b5ca6e854fce386b267cd4b7f6baf7fae11efca198d4893fb3727fa",
+	"6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296",
+	"4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+	"f10b260232218628c0b6b5e6f65e2c56f1244ddd6d3e7278cb2063bea7da9223",
+	"eb00acf7e205fe6ff5121b5b11dff7480569b1428c0e6b59502d92ed381e23ef"
+},
+{
+	"P-256", CURVE_P_256, 256,
+	"094d9b4f326c8567c0bf24f1b209be030d51459ef3a6c3a88a2098e6dad6ccd4",
+	"6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296",
+	"4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+	"837b7ec84db657df9404ec560ad384ef3c9cea11393b9c32935ea206ea668bba",
+	"8a7557feddc4f225483ee8c41abb3f987aa9f58bdc49d79f27506f56e0275832"
 },
 };
 
@@ -452,32 +465,32 @@ static char  hex_char_tbl[] = "0123456789abcdef";
 
 void  print_data(char *str, char *buff, int len)
 {
-	int  i;
-	
+	int i;
+
 	printf("%s: ", str);
-	for (i = 0; i < len; i++) 
+	for (i = 0; i < len; i++)
 	 printf("%02x", (unsigned char)buff[i]);
 	printf("\n");
 }
 
 int rsa_performance_test(void)
 {
-	int	i, fd;
-	u8	buff[520];
-        struct timeval   t0, t1;
-        int	tt;
-	
+	int i, fd;
+	u8 buff[520];
+	struct timeval t0, t1;
+	int tt;
+
 	fd = open(NVT_RSA, O_RDWR);
 	if (fd < 0) {
 		printf("Failed to open %s!\n", NVT_RSA);
 		return -1;
 	}
-	
+
 	for (i = 0; i < sizeof(rsa_vectors)/sizeof(struct rsa_tv_t); i++) {
 		printf("\n\nRun test vector RSA-%d encrypt\n", rsa_vectors[i].bitlen);
 		print_data("RSA input: ", &(rsa_vectors[i].M[2]), (rsa_vectors[i].M[0] << 8) | rsa_vectors[i].M[1]);
 		memset(buff, 0, sizeof(buff));
-	
+
 		gettimeofday(&t0, NULL);
 		ioctl(fd, RSA_IOC_SET_BITLEN, rsa_vectors[i].bitlen);
 		ioctl(fd, RSA_IOC_SET_M, rsa_vectors[i].M);
@@ -521,13 +534,13 @@ static inline int get_nibble_value(char c)
 
 void cstr_to_hex(u8 *cstr, u8 *hex_buff, int klen)
 {
-	int   i, kidx, bytes;
-	u8    *ptr = cstr;
-	
+	int i, kidx, bytes;
+	u8 *ptr = cstr;
+
 	bytes = (klen + 7) / 8;
 	hex_buff[bytes] = 0;
 	hex_buff[bytes + 1] = 0;
-	
+
 	i = strlen(cstr) - 1;
 	for (kidx = bytes - 1; kidx >= 0; kidx--) {
 		hex_buff[kidx] = 0;
@@ -540,15 +553,10 @@ void cstr_to_hex(u8 *cstr, u8 *hex_buff, int klen)
 
 void hex_to_cstr(u8 *hex_buff, int len, u8 *cstr)
 {
-	int   i;
-	u8    *ptr = cstr;
-	
-	/* skip leading zeros */
-	for (i = 0; i < len; i++) {
-		if (hex_buff[i] != 0x00)
-			break;
-	}
-	for ( ; i < len; i++) {
+	int i;
+	u8 *ptr = cstr;
+
+	for (i = 0 ; i < len; i++) {
 		*ptr++ = hex_char_tbl[(hex_buff[i] >> 4) & 0xf];
 		*ptr++ = hex_char_tbl[hex_buff[i] & 0xf];
 	}
@@ -556,54 +564,73 @@ void hex_to_cstr(u8 *hex_buff, int len, u8 *cstr)
 	*ptr = 0;
 }
 
-
 int ecc_performance_test(void)
 {
-	int	i, fd, len;
-	u8	buff[160];
-	u8      str_buff[160];
-        struct timeval   t0, t1;
-        int	tt;
-	
+	int i, fd, len;
+	struct ecc_args_t args;
+	u8 str_buff[160];
+	struct timeval t0, t1;
+	int tt;
+
 	fd = open(NVT_ECC, O_RDWR);
 	if (fd < 0) {
 		printf("Failed to open %s!\n", NVT_ECC);
 		return -1;
 	}
-	
+
 	for (i = 0; i < sizeof(ecc_vectors)/sizeof(struct ecc_tv_t); i++) {
 		printf("\n\nRun ECC %s point mult test\n", ecc_vectors[i].name);
 
-		memset(buff, 0, sizeof(buff));
-		cstr_to_hex(ecc_vectors[i].d, buff, ecc_vectors[i].keylen);
+		memset(&args, 0, sizeof(args));
+		args.curve = ecc_vectors[i].curve;    /* specify ECC curve */
+		args.keylen = ecc_vectors[i].keylen;  /* specify key length */
+		args.knum_d = -1;                      /* private key do not use Key Store */
+		args.knum_x = -1;
+		args.knum_y = -1;
+		cstr_to_hex(ecc_vectors[i].d, args.d, ecc_vectors[i].keylen);
+		cstr_to_hex(ecc_vectors[i].Qx, args.Qx, ecc_vectors[i].keylen);
+		cstr_to_hex(ecc_vectors[i].Qy, args.Qy, ecc_vectors[i].keylen);
 
 		gettimeofday(&t0, NULL);
-		ioctl(fd, ECC_IOC_SET_CURVE, ecc_vectors[i].curve);
-		ioctl(fd, ECC_IOC_SET_PRIV_KEY, buff);
-		ioctl(fd, ECC_IOC_SET_PUB_KEY, NULL);
-		memset(buff, 0, sizeof(buff));
-		ioctl(fd, ECC_IOC_POINT_MUL, buff);
+		ioctl(fd, ECC_IOC_POINT_MUL, &args);
 		gettimeofday(&t1, NULL);
 		tt = (t1.tv_sec - t0.tv_sec) * 1000000 + t1.tv_usec - t0.tv_usec;
 		printf("PERFORMANCE: %d us\n", tt);
 
 		len = (ecc_vectors[i].keylen + 7) / 8;
 
-		hex_to_cstr(buff, len, str_buff);
+		hex_to_cstr(args.out_x, len, str_buff);
 		printf("[Result] X: %s\n", str_buff);
-		hex_to_cstr(&buff[len], len, str_buff);
+		hex_to_cstr(args.out_y, len, str_buff);
 		printf("         Y: %s\n", str_buff);
 
-		printf("[Answer] X: %s\n", ecc_vectors[i].Qx);
-		printf("         Y: %s\n", ecc_vectors[i].Qy);
+		printf("[Answer] X: %s\n", ecc_vectors[i].ans_x);
+		printf("         Y: %s\n", ecc_vectors[i].ans_y);
 	}
 	close(fd);
 }
 
 int main(int argc, char **argv)
 {
+	printf("\n\n%s %s\n\n", __DATE__, __TIME__);
+
 	rsa_performance_test();
 	printf("\n\n\n");
+
 	ecc_performance_test();
+	printf("\n\n\n");
+
+	/* This feature is supported on MA35D1 only. */
+	ecc_public_key_generation();
+
+	/* This feature is supported on MA35D1 only. */
+	ecc_signature_verification();
+
+	/* This feature is supported on MA35D1 only. */
+	ecc_signature_generation();
+
+	printf("All test done.\n");
+
+	return 0;
 }
 
