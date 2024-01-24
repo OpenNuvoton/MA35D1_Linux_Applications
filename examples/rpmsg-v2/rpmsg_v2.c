@@ -29,18 +29,19 @@
 #include <linux/ioctl.h>
 
 /* Debug level 0~2 */
-#define RPMSG_DEBUG_LEVEL  1
-#define ADD_TX_FLOW        0
+#define RPMSG_DEBUG_LEVEL      1
+#define ENABLE_TX_FLOW         1
 
-/* Tx/Rx in free run mode, timer may not effect if enabled */
-#if (ADD_TX_FLOW > 0)
-    #define TXRX_FREE_RUN  0
+/* If Tx/Rx in free run mode, ack timer is disabled */
+#if (ENABLE_TX_FLOW > 0)
+    #define TXRX_FREE_RUN      1
 #endif
 
 /* The period of timer for handshake flow control */
-#define ACK_TIMER_SEC      0
-#define ACK_TIMER_USEC     100 /* 50 < ACK_TIMER_USEC < 10^6 */
-
+#if (TXRX_FREE_RUN == 0)
+	#define ACK_TIMER_SEC      0
+	#define ACK_TIMER_USEC     1000 /* 1000 < ACK_TIMER_USEC < 10^6 */
+#endif
 
 /**
  * @brief CMD frame
@@ -51,7 +52,7 @@
  * As client :
  *     Rx : Receive ServerSEQ, Tx : Reply ClientSEQ
  */
-#define PAYLOAD_LEN    112
+#define PAYLOAD_LEN    0x80-16
 #define SUBCMD_LEN     16
 #define SUBCMD_DIGITS  0xFFFF
 #define SUBCMD_START   0x01
@@ -61,6 +62,8 @@
 #define SUBCMD_SEQ     0x10
 #define SUBCMD_SEQACK  0x20
 #define SUBCMD_ERROR   0x8000
+
+#define MAILBOX_LEN    PAYLOAD_LEN + SUBCMD_LEN
 
 // seqack state machine
 #define ACK_READY      0
@@ -83,8 +86,12 @@
 	#define sysprintf
 #endif
 
-#if (ACK_TIMER_USEC < 50)
-	#error The period of ACK_TIMER_USEC should not less than 50us
+#if (ACK_TIMER_USEC < 1000) && (TXRX_FREE_RUN == 0)
+	#error The period of ACK_TIMER_USEC should not less than 1000us
+#endif
+
+#if (MAILBOX_LEN > 0x4000)
+	#error The maximum length of mailbox should not over 16KB
 #endif
 
 struct rpmsg_endpoint_info
@@ -172,7 +179,7 @@ int prepare_txdata(unsigned char *data, int *len)
 
 int txdata_pack(unsigned char *txbuffer, int *len)
 {
-#if (ADD_TX_FLOW > 0)
+#if (ENABLE_TX_FLOW > 0)
 	unsigned int subCmd[4] = {0};
 
 	if(prepare_txdata(txbuffer + SUBCMD_LEN, len)) {
@@ -180,6 +187,13 @@ int txdata_pack(unsigned char *txbuffer, int *len)
 		subCmd[1] |= ++tx_server_seq & SEQ_DIGITS;
 		memcpy(txbuffer, subCmd, SUBCMD_LEN);
 		*len += SUBCMD_LEN;
+		if (tx_server_seq%1000 == 0)
+			sysprintf("Send #%d\n", tx_server_seq);
+		return 1;
+	}
+
+	if(*len == 0) {
+		*len = SUBCMD_LEN;
 		return 1;
 	}
 #endif
@@ -226,6 +240,8 @@ void seqack_append(void *Tx_Buffer, int len)
 		else {
 			break;
 		}
+		if (status_flag & SUBCMD_EXIT)
+			return;
 	}
 }
 
@@ -233,14 +249,11 @@ void alarm_handler(int signo)
 {
 	unsigned int subCmd[4] = {0};
 	unsigned int len;
-	unsigned char Tx_Buffer[130];
+	unsigned char Tx_Buffer[MAILBOX_LEN];
 
 	if (ack_ready == ACK_BUSY) {
-		if(txdata_pack(Tx_Buffer, &len)) {
+		if(txdata_pack(Tx_Buffer, &len))
 			seqack_append(Tx_Buffer, len);
-			if (tx_server_seq%1000 == 0)
-				sysprintf("Send #%d\n", tx_server_seq);
-		}
 		else // single ack, no data
 			seqack_append(subCmd, SUBCMD_LEN);
 	}
@@ -248,20 +261,24 @@ void alarm_handler(int signo)
 
 void set_timer(struct itimerval *ts)
 {
+#if (TXRX_FREE_RUN != 1)
 	ts->it_interval.tv_sec = 0;
 	ts->it_interval.tv_usec = 0;
 	ts->it_value.tv_sec = ACK_TIMER_SEC;
 	ts->it_value.tv_usec = ACK_TIMER_USEC;
 	setitimer(ITIMER_REAL, ts, NULL);
+#endif
 }
 
 void del_timer(struct itimerval *ts)
 {
+#if (TXRX_FREE_RUN != 1)
 	ts->it_interval.tv_sec = 0;
 	ts->it_interval.tv_usec = 0;
 	ts->it_value.tv_sec = 0;
 	ts->it_value.tv_usec = 0;
 	setitimer(ITIMER_REAL, ts, NULL);
+#endif
 }
 
 /**
@@ -276,8 +293,8 @@ int main(int argc, char **argv)
 	int ret;
 	int err;
 	unsigned int subCmd[4];
-	unsigned char Tx_Buffer[130];
-	unsigned char Rx_Buffer[130];
+	unsigned char Tx_Buffer[MAILBOX_LEN];
+	unsigned char Rx_Buffer[MAILBOX_LEN];
 	struct itimerval ts;
 	int tx_process = 0;
 
@@ -286,10 +303,12 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
+#if (TXRX_FREE_RUN != 1)
 	if (signal(SIGALRM, alarm_handler) == SIG_ERR) {
 		printf("Fail ot set alarm signal");
 		return -1;
 	}
+#endif
 
 	printf("\n demo rpmsg \n");
 
@@ -423,12 +442,14 @@ int main(int argc, char **argv)
 			// seqack
 			seqack_append(Tx_Buffer, len);
 			tx_process = 0;
-			if (tx_server_seq%1000 == 0)
-				sysprintf("Send #%d\n", tx_server_seq);
 		}
 
-		if (status_flag & SUBCMD_EXIT)
+		if (status_flag & SUBCMD_EXIT) {
+			/* check for the last RTP response before exit */
+			err = poll(fds, 1, 1000);
+
 			return 0;
+		}
 	}
 
 	return 0;
