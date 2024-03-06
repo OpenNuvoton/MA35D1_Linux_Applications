@@ -43,6 +43,7 @@
 	#define ACK_TIMER_USEC     1000 /* 1000 < ACK_TIMER_USEC < 10^6 */
 #endif
 
+#define SUBCMD_LEN     16
 /**
  * @brief CMD frame
  * ---Appl Level---
@@ -52,8 +53,7 @@
  * As client :
  *     Rx : Receive ServerSEQ, Tx : Reply ClientSEQ
  */
-#define PAYLOAD_LEN    0x80-16
-#define SUBCMD_LEN     16
+#define PAYLOAD_LEN    (0x80 - SUBCMD_LEN)
 #define SUBCMD_DIGITS  0xFFFF
 #define SUBCMD_START   0x01
 #define SUBCMD_SUSPEND 0x02
@@ -287,7 +287,7 @@ void del_timer(struct itimerval *ts)
 int main(int argc, char **argv)
 {
 	char *dev[10] = {"/dev/rpmsg_ctrl0", " "};
-	unsigned int i, len = 128;
+	unsigned int i, len = MAILBOX_LEN;
 	int rev1, rev2;
 	struct rpmsg_endpoint_info eptinfo;
 	int ret;
@@ -395,7 +395,7 @@ int main(int argc, char **argv)
 
 			if (err == 1) {
 				do {
-					rev1 = read(fd[1], Rx_Buffer, 128);
+					rev1 = read(fd[1], Rx_Buffer, MAILBOX_LEN);
 					if(status_flag & SUBCMD_EXIT)
 						break;
 				} while(rev1 < 0);
