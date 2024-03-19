@@ -1,12 +1,10 @@
 .SUFFIXES : .x .o .c .s
 
-CROSS_COMPILE = aarch64-nuvoton-linux-gnu-
+CC := aarch64-linux-gnu-gcc
+STRIP := aarch64-linux-gnu-strip
 
-CC = $(CROSS_COMPILE)gcc
-STRIP = $(CROSS_COMPILE)strip
-
-TARGET = ma35d1_bl2_offset
-SRCS := ma35d1_bl2_offset.c
+TARGET = misctrl
+SRCS := main.c
 LIBS = -lpthread -lc -lgcc
 
 all:
