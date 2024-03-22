@@ -28,6 +28,16 @@
 #include <poll.h>
 #include <linux/ioctl.h>
 
+/**
+ * Default shared memory size is 0x80 bytes for SRAM.
+ *
+ * If and only if "rpmsg-ddr-buf" in device tree is defined,
+ * shared memory size could be between 0x80 and 0x4000,
+ * but it should not exceed the range of memory region
+ * "rpmsg_buf" defined in the device tree.
+ */
+#define MAILBOX_LEN            0x80
+
 /* Debug level 0~2 */
 #define RPMSG_DEBUG_LEVEL      1
 #define ENABLE_TX_FLOW         1
@@ -43,7 +53,6 @@
 	#define ACK_TIMER_USEC     1000 /* 1000 < ACK_TIMER_USEC < 10^6 */
 #endif
 
-#define SUBCMD_LEN     16
 /**
  * @brief CMD frame
  * ---Appl Level---
@@ -53,7 +62,8 @@
  * As client :
  *     Rx : Receive ServerSEQ, Tx : Reply ClientSEQ
  */
-#define PAYLOAD_LEN    (0x80 - SUBCMD_LEN)
+#define SUBCMD_LEN     16
+#define PAYLOAD_LEN    (MAILBOX_LEN - SUBCMD_LEN)
 #define SUBCMD_DIGITS  0xFFFF
 #define SUBCMD_START   0x01
 #define SUBCMD_SUSPEND 0x02
@@ -62,8 +72,6 @@
 #define SUBCMD_SEQ     0x10
 #define SUBCMD_SEQACK  0x20
 #define SUBCMD_ERROR   0x8000
-
-#define MAILBOX_LEN    PAYLOAD_LEN + SUBCMD_LEN
 
 // seqack state machine
 #define ACK_READY      0
@@ -287,7 +295,7 @@ void del_timer(struct itimerval *ts)
 int main(int argc, char **argv)
 {
 	char *dev[10] = {"/dev/rpmsg_ctrl0", " "};
-	unsigned int i, len = MAILBOX_LEN;
+	unsigned int i, len = PAYLOAD_LEN;
 	int rev1, rev2;
 	struct rpmsg_endpoint_info eptinfo;
 	int ret;
@@ -310,7 +318,8 @@ int main(int argc, char **argv)
 	}
 #endif
 
-	printf("\n demo rpmsg \n");
+	printf("\n Demo rpmsg v2 \n");
+	printf("\n Please ensure that the configurations in device tree are compatible with RTP.\n");
 
 	fd[0] = open("/dev/rpmsg_ctrl0", O_RDWR | O_NONBLOCK);
 	if (fd[0] < 0) {
