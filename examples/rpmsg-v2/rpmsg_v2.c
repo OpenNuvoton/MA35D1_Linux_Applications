@@ -40,18 +40,6 @@
 
 /* Debug level 0~2 */
 #define RPMSG_DEBUG_LEVEL      1
-#define ENABLE_TX_FLOW         1
-
-/* If Tx/Rx in free run mode, ack timer is disabled */
-#if (ENABLE_TX_FLOW > 0)
-    #define TXRX_FREE_RUN      1
-#endif
-
-/* The period of timer for handshake flow control */
-#if (TXRX_FREE_RUN == 0)
-	#define ACK_TIMER_SEC      0
-	#define ACK_TIMER_USEC     1000 /* 1000 < ACK_TIMER_USEC < 10^6 */
-#endif
 
 /**
  * @brief CMD frame
@@ -94,13 +82,12 @@
 	#define sysprintf
 #endif
 
-#if (ACK_TIMER_USEC < 1000) && (TXRX_FREE_RUN == 0)
-	#error The period of ACK_TIMER_USEC should not less than 1000us
-#endif
-
 #if (MAILBOX_LEN > 0x4000)
 	#error The maximum length of mailbox should not over 16KB
 #endif
+
+typedef int (*rpmsg_tx_cb_t)(unsigned char *, int *);
+typedef void (*rpmsg_rx_cb_t)(unsigned char *, int);
 
 struct rpmsg_endpoint_info
 {
@@ -109,14 +96,67 @@ struct rpmsg_endpoint_info
 	__u32 dst;
 };
 
-timer_t timerid;
-unsigned int ack_ready = ACK_READY;
-static unsigned int tx_server_seq = 0, rx_client_seq = 0; // A35 as server
-static unsigned int rx_server_seq = 0, tx_client_seq = 0; // A35 as client
-volatile unsigned int status_flag = 0;
-volatile unsigned int seq_start = 0, throughput = 0;
+struct ma35_rpmsg {
+	unsigned int ack_ready;
+	// A35 as server
+	unsigned int tx_server_seq;
+	unsigned int rx_client_seq;
+	// A35 as client
+	unsigned int rx_server_seq;
+	unsigned int tx_client_seq;
+	unsigned int status_flag;
+	unsigned int seq_start;
 
+	unsigned int subCmd[4];
+	int tx_process;
+	int tx_en;
+	int rx_en;
+	rpmsg_tx_cb_t tx_cb;
+	rpmsg_rx_cb_t rx_cb;
+};
+
+struct ma35_rpmsg rpmsg;
 int fd[2];
+
+/**
+ * @brief Send data A35 -> RTP
+ *
+ * @param data
+ * @param len payload only
+ * @return int
+ */
+int rpmsg_tx_cb(unsigned char *data, int *len)
+{
+    int i;
+
+    *len = PAYLOAD_LEN;
+    for(i = 0; i < *len; i++) {
+        data[i] = i;
+    }
+
+	if(*len > 0 && *len <= PAYLOAD_LEN)
+		return 1;
+	else
+		return 0;
+}
+
+/**
+ * @brief Receive data RTP -> A35
+ *
+ * @param data
+ * @param len payload only
+ */
+void rpmsg_rx_cb(unsigned char *data, int len)
+{
+#if (RPMSG_DEBUG_LEVEL > 1)
+	int i;
+    sysprintf("\n Receive %d bytes data from RTP: \n", len);
+    for(i = 0; i < len; i++) {
+        sysprintf(" 0x%x ", data[i]);
+    }
+	sysprintf("\n");
+#endif
+}
 
 static int rpmsg_create_ept(int rpfd, struct rpmsg_endpoint_info *eptinfo)
 {
@@ -132,9 +172,9 @@ void sig_handler(int signo)
 {
 	int ret;
 	unsigned char Tx_Buffer[SUBCMD_LEN] = {0};
-	
+
 	if (signo == SIGINT) {
-		status_flag |= SUBCMD_EXIT;
+		rpmsg.status_flag |= SUBCMD_EXIT;
 		Tx_Buffer[0] |= SUBCMD_EXIT;
 		ret = write(fd[1], Tx_Buffer, SUBCMD_LEN);
 		if (ret < 0) {
@@ -145,58 +185,20 @@ void sig_handler(int signo)
 	}
 }
 
-/**
- * @brief Receive data RTP -> A35 
- * 
- * @param data 
- * @param len payload only
- */
-void receive_rxdata(unsigned char *data, int len)
-{
-#if (RPMSG_DEBUG_LEVEL > 1)
-	int i;
-    sysprintf("\n Receive %d bytes data from RTP: \n", len);
-    for(i = 0; i < len; i++) {
-        sysprintf(" 0x%x ", data[i]);
-    }
-	sysprintf("\n");
-#endif
-}
-
-/**
- * @brief Send data A35 -> RTP
- * 
- * @param data 
- * @param len payload only
- * @return int 
- */
-int prepare_txdata(unsigned char *data, int *len)
-{
-    int i;
-
-    *len = PAYLOAD_LEN;
-    for(i = 0; i < *len; i++) {
-        data[i] = i;
-    }
-
-	if(*len > 0 && *len <= PAYLOAD_LEN)
-		return 1;
-	else
-		return 0;
-}
-
 int txdata_pack(unsigned char *txbuffer, int *len)
 {
-#if (ENABLE_TX_FLOW > 0)
 	unsigned int subCmd[4] = {0};
 
-	if(prepare_txdata(txbuffer + SUBCMD_LEN, len)) {
+	if(rpmsg.tx_cb == NULL)
+		return 0;
+
+	if(rpmsg.tx_cb(txbuffer + SUBCMD_LEN, len)) {
 		subCmd[0] |= SUBCMD_SEQ;
-		subCmd[1] |= ++tx_server_seq & SEQ_DIGITS;
+		subCmd[1] |= ++rpmsg.tx_server_seq & SEQ_DIGITS;
 		memcpy(txbuffer, subCmd, SUBCMD_LEN);
 		*len += SUBCMD_LEN;
-		if (tx_server_seq%1000 == 0)
-			sysprintf("Send #%d\n", tx_server_seq);
+		if (rpmsg.tx_server_seq%1000 == 0 && rpmsg.tx_server_seq)
+			sysprintf("Send #%d\n", rpmsg.tx_server_seq);
 		return 1;
 	}
 
@@ -204,7 +206,7 @@ int txdata_pack(unsigned char *txbuffer, int *len)
 		*len = SUBCMD_LEN;
 		return 1;
 	}
-#endif
+
 	return 0;
 }
 
@@ -221,23 +223,23 @@ void seqack_append(void *Tx_Buffer, int len)
 		},
 	};
 
-	seq_start = tx_client_seq;
+	rpmsg.seq_start = rpmsg.tx_client_seq;
 	subCmd[0] = *(unsigned int *)Tx_Buffer | SUBCMD_SEQACK;
 	subCmd[1] = *((unsigned int *)Tx_Buffer + 1);
-	subCmd[2] = seq_start & SEQ_DIGITS;
+	subCmd[2] = rpmsg.seq_start & SEQ_DIGITS;
 	memcpy(Tx_Buffer, subCmd, SUBCMD_LEN);
 
 	ret = write(fd[1], Tx_Buffer, len);
 	if (ret < 0) {
-		if(status_flag & SUBCMD_EXIT)
+		if(rpmsg.status_flag & SUBCMD_EXIT)
 			return;
 		printf("\n Failed to write#2 \n");
 		while(1);
 	}
-	ack_ready = ACK_READY;
+	rpmsg.ack_ready = ACK_READY;
 
-	if (tx_client_seq%1000 == 0)
-		sysprintf("ack #%d\n", tx_client_seq);
+	if (rpmsg.tx_client_seq%1000 == 0 && rpmsg.tx_client_seq)
+		sysprintf("ack #%d\n", rpmsg.tx_client_seq);
 
 	while(1) {
 		err = poll(fds, 1, 1000);
@@ -248,111 +250,14 @@ void seqack_append(void *Tx_Buffer, int len)
 		else {
 			break;
 		}
-		if (status_flag & SUBCMD_EXIT)
+		if (rpmsg.status_flag & SUBCMD_EXIT)
 			return;
 	}
 }
 
-void alarm_handler(int signo)
+int ma35_rpmsg_kick(struct ma35_rpmsg *rpmsg, unsigned char *Tx_Buffer)
 {
-	unsigned int subCmd[4] = {0};
-	unsigned int len;
-	unsigned char Tx_Buffer[MAILBOX_LEN];
-
-	if (ack_ready == ACK_BUSY) {
-		if(txdata_pack(Tx_Buffer, &len))
-			seqack_append(Tx_Buffer, len);
-		else // single ack, no data
-			seqack_append(subCmd, SUBCMD_LEN);
-	}
-}
-
-void set_timer(struct itimerval *ts)
-{
-#if (TXRX_FREE_RUN != 1)
-	ts->it_interval.tv_sec = 0;
-	ts->it_interval.tv_usec = 0;
-	ts->it_value.tv_sec = ACK_TIMER_SEC;
-	ts->it_value.tv_usec = ACK_TIMER_USEC;
-	setitimer(ITIMER_REAL, ts, NULL);
-#endif
-}
-
-void del_timer(struct itimerval *ts)
-{
-#if (TXRX_FREE_RUN != 1)
-	ts->it_interval.tv_sec = 0;
-	ts->it_interval.tv_usec = 0;
-	ts->it_value.tv_sec = 0;
-	ts->it_value.tv_usec = 0;
-	setitimer(ITIMER_REAL, ts, NULL);
-#endif
-}
-
-/**
- *@breif 	main()
- */
-int main(int argc, char **argv)
-{
-	char *dev[10] = {"/dev/rpmsg_ctrl0", " "};
-	unsigned int i, len = PAYLOAD_LEN;
-	int rev1, rev2;
-	struct rpmsg_endpoint_info eptinfo;
-	int ret;
-	int err;
-	unsigned int subCmd[4];
-	unsigned char Tx_Buffer[MAILBOX_LEN];
-	unsigned char Rx_Buffer[MAILBOX_LEN];
-	struct itimerval ts;
-	int tx_process = 0;
-
-	if (signal(SIGINT, sig_handler) == SIG_ERR) {
-		printf("Failed to catach CTRL-C signal!\n");
-		return -1;
-	}
-
-#if (TXRX_FREE_RUN != 1)
-	if (signal(SIGALRM, alarm_handler) == SIG_ERR) {
-		printf("Fail ot set alarm signal");
-		return -1;
-	}
-#endif
-
-	printf("\n Demo rpmsg v2 \n");
-	printf("\n Please ensure that the configurations in device tree are compatible with RTP.\n");
-
-	fd[0] = open("/dev/rpmsg_ctrl0", O_RDWR | O_NONBLOCK);
-	if (fd[0] < 0) {
-		printf("\n Failed to open \n");
-		return 0;
-	}
-
-	strcpy(eptinfo.name, "rpmsg-test");
-	eptinfo.src = 0;
-	eptinfo.dst = 0xFFFFFFFF;
-
-	ret = rpmsg_create_ept(fd[0], &eptinfo);
-	if (ret) {
-		printf("failed to create RPMsg endpoint.\n");
-		return -EINVAL;
-	}
-
-	ret = system("/sbin/mdev -s");
-	if (ret < 0) {
-		printf("\nFailed to load rpmsg_char driver.\n");
-		while(1);
-	}
-
-	fd[1] = open("/dev/rpmsg0", O_RDWR | O_NONBLOCK);
-
-	if (fd[1] < 0) {
-		printf("\n Failed to open rpmsg0 \n");
-		while(1);
-	}
-
-	ts.it_interval.tv_sec = 0;
-	ts.it_interval.tv_usec = 0;
-	ts.it_value.tv_sec = 0;
+	int ret, err;
 
 	/* A start cmd to release RTP */
 	while(1) {
@@ -362,15 +267,15 @@ int main(int argc, char **argv)
 			.events = POLLOUT },
 		};
 
-		memset(subCmd, 0, sizeof(subCmd));
-		subCmd[0] |= SUBCMD_START;
+		memset(rpmsg->subCmd, 0, sizeof(rpmsg->subCmd));
+		rpmsg->subCmd[0] |= SUBCMD_START;
 
-		memcpy(Tx_Buffer, subCmd, SUBCMD_LEN);
+		memcpy(Tx_Buffer, rpmsg->subCmd, SUBCMD_LEN);
 		// tell M4 rpsmg window size
 		*(unsigned int *)(Tx_Buffer + SUBCMD_LEN) = RPMSG_WND;
 
-		rev1 = write(fd[1], Tx_Buffer, SUBCMD_LEN + 4);
-		if (rev1 < 0) {
+		ret = write(fd[1], Tx_Buffer, SUBCMD_LEN + 4);
+		if (ret < 0) {
 			printf("\n Failed to write#3 \n");
 			while(1);
 		}
@@ -384,11 +289,176 @@ int main(int argc, char **argv)
 			else {
 				break;
 			}
-			if (status_flag & SUBCMD_EXIT)
+			if (rpmsg->status_flag & SUBCMD_EXIT)
 				return 0;
 		}
 		printf("\n Write start CMD to RTP, demo start! \n");
 		break;
+	}
+
+	return 0;
+}
+
+int ma35_rpmsg_open(struct ma35_rpmsg *rpmsg, int *fd, struct rpmsg_endpoint_info *info,
+					rpmsg_rx_cb_t rxcb, rpmsg_tx_cb_t txcb)
+{
+	int ret;
+	unsigned char Tx_Buffer[SUBCMD_LEN*2];
+
+	if(sizeof(fd) < sizeof(int) * 2)
+	{
+		printf("file desc not enough.\n");
+		return -EPERM;
+	}
+	memset(rpmsg, 0, sizeof(rpmsg));
+	rpmsg->rx_cb = rxcb;
+	rpmsg->tx_cb = txcb;
+
+	fd[0] = open("/dev/rpmsg_ctrl0", O_RDWR | O_NONBLOCK);
+	if (fd[0] < 0) {
+		printf("\n Failed to open \n");
+		return -ENOENT;
+	}
+
+	strcpy(info->name, "rpmsg-test");
+	info->src = 0;
+	info->dst = 0xFFFFFFFF;
+
+	ret = rpmsg_create_ept(fd[0], info);
+	if (ret) {
+		printf("failed to create RPMsg endpoint.\n");
+		return -EINVAL;
+	}
+
+	fd[1] = open("/dev/rpmsg0", O_RDWR | O_NONBLOCK);
+
+	if (fd[1] < 0) {
+		printf("\n Failed to open rpmsg0 \n");
+		while(1);
+	}
+
+	ma35_rpmsg_kick(rpmsg, Tx_Buffer);
+
+	return 0;
+}
+
+int rpmsg_ack_process(struct ma35_rpmsg *rpmsg, struct pollfd *fds, unsigned char *Rx_Buffer, int *len)
+{
+	int err, ret;
+
+	while(1) {
+		err = poll(fds, 1, 1000);
+
+		if (err == 1) {
+			do {
+				ret = read(fd[1], Rx_Buffer, *len);
+				if(rpmsg->status_flag & SUBCMD_EXIT)
+					break;
+			} while(ret < 0);
+			*len = ret;
+			break;
+		}
+		else if (err == 0) {
+			if(rpmsg->status_flag & SUBCMD_EXIT)
+				return -1;
+		}
+	}
+
+	if (*(unsigned int *)Rx_Buffer & SUBCMD_SEQ) {
+		// update seq from RTP
+		rpmsg->rx_server_seq = *(unsigned int *)(Rx_Buffer + SERVER_SEQ_OFFSET) & SEQ_DIGITS;
+		rpmsg->tx_client_seq = rpmsg->rx_server_seq;
+	}
+
+	return 0;
+}
+
+int ma35_rpmsg_read(struct ma35_rpmsg *rpmsg, struct pollfd *fds, unsigned char *Rx_Buffer, int *len)
+{
+	*len = MAILBOX_LEN;
+	if(rpmsg_ack_process(rpmsg, fds, Rx_Buffer, len)) {
+		printf("failed to read.\n");
+		return -1;
+	}
+
+	rpmsg->rx_en = 1;
+
+	if(rpmsg->rx_cb)
+		rpmsg->rx_cb(Rx_Buffer + SUBCMD_LEN, *len - SUBCMD_LEN);
+
+	return 0;
+}
+
+int ma35_rpmsg_send(struct ma35_rpmsg *rpmsg, unsigned char *Tx_Buffer, int *len)
+{
+	memset(Tx_Buffer, 0, sizeof(Tx_Buffer));
+	rpmsg->tx_process = txdata_pack(Tx_Buffer, len);
+
+	if (rpmsg->tx_process) {
+		rpmsg->ack_ready = ACK_READY;
+		seqack_append(Tx_Buffer, *len);
+		rpmsg->tx_process = 0;
+	}
+
+	rpmsg->tx_en = 1;
+
+	return 0;
+}
+
+int ma35_rpmsg_cmd_handler(struct ma35_rpmsg *rpmsg, struct pollfd *fds)
+{
+	int err;
+	unsigned int subCmd[4] = {0};
+
+	if(rpmsg->tx_en)
+		rpmsg->tx_en = 0;
+	else
+		seqack_append(subCmd, SUBCMD_LEN);
+
+	if(rpmsg->rx_en)
+		rpmsg->rx_en = 0;
+	else
+	{
+		int len = SUBCMD_LEN;
+		unsigned char Rx_Buffer[SUBCMD_LEN];
+
+		rpmsg_ack_process(rpmsg, fds, Rx_Buffer, &len);
+	}
+
+	if (rpmsg->status_flag & SUBCMD_EXIT) {
+		/* check for the last RTP response before exit */
+		err = poll(fds, 1, 1000);
+
+		return -1;
+	}
+
+	return 0;
+}
+
+/**
+ *@breif 	main()
+ */
+int main(int argc, char **argv)
+{
+	char *dev[10] = {"/dev/rpmsg_ctrl0", " "};
+	unsigned int len;
+	struct rpmsg_endpoint_info eptinfo;
+	unsigned char Tx_Buffer[MAILBOX_LEN];
+	unsigned char Rx_Buffer[MAILBOX_LEN];
+	int ret;
+
+	if (signal(SIGINT, sig_handler) == SIG_ERR) {
+		printf("Failed to catach CTRL-C signal!\n");
+		return -1;
+	}
+
+	printf("\n Demo rpmsg v2 \n");
+	printf("\n Please ensure that the configurations in device tree are compatible with RTP.\n");
+
+	ret = ma35_rpmsg_open(&rpmsg, fd, &eptinfo, rpmsg_rx_cb, rpmsg_tx_cb);
+	if(ret) {
+		printf("Fail to open rpmsg.\n");
+		return 0;
 	}
 
 	/* Start demo */
@@ -399,66 +469,12 @@ int main(int argc, char **argv)
 			.events = POLLIN, },
 		};
 
-		while(1) {
-			err = poll(fds, 1, 1000);
+		ma35_rpmsg_read(&rpmsg, fds, Rx_Buffer, &len);
 
-			if (err == 1) {
-				do {
-					rev1 = read(fd[1], Rx_Buffer, MAILBOX_LEN);
-					if(status_flag & SUBCMD_EXIT)
-						break;
-				} while(rev1 < 0);
-				len = rev1;
-				break;
-			}
-			else if (err == 0) {
-				if(status_flag & SUBCMD_EXIT)
-					return 0;
-			}
-		}
+		ma35_rpmsg_send(&rpmsg, Tx_Buffer, &len);
 
-		if (*(unsigned int *)Rx_Buffer & SUBCMD_SEQ) {
-			// update seq from RTP
-			rx_server_seq = *(unsigned int *)(Rx_Buffer + SERVER_SEQ_OFFSET) & SEQ_DIGITS;
-			tx_client_seq = rx_server_seq;
-		}
-
-		receive_rxdata(Rx_Buffer + SUBCMD_LEN, len - SUBCMD_LEN);
-
-		// do write
-		memset(Tx_Buffer, 0, sizeof(Tx_Buffer));
-#if (TXRX_FREE_RUN > 0)
-		tx_process = txdata_pack(Tx_Buffer, &len);
-#endif
-
-		// seqack controlled by timer or diff of seq.
-		if ((ack_ready == ACK_READY) && (seq_start != tx_client_seq)) {
-			set_timer(&ts);
-			ack_ready = ACK_BUSY;
-		}
-		else if (abs((int)(tx_client_seq - seq_start)) >= RPMSG_WND/2) {
-			// sender is faster than timer, reset timer and seqack now
-			ack_ready = ACK_READY;
-			del_timer(&ts);
-			// seqack
-			seqack_append(Tx_Buffer, SUBCMD_LEN);
-			tx_process = 0;
-		}
-
-		if (tx_process) {
-			ack_ready = ACK_READY;
-			del_timer(&ts);
-			// seqack
-			seqack_append(Tx_Buffer, len);
-			tx_process = 0;
-		}
-
-		if (status_flag & SUBCMD_EXIT) {
-			/* check for the last RTP response before exit */
-			err = poll(fds, 1, 1000);
-
-			return 0;
-		}
+		if(ma35_rpmsg_cmd_handler(&rpmsg, fds))
+			break;
 	}
 
 	return 0;
