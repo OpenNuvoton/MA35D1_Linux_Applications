@@ -2,7 +2,13 @@
  * Copyright (c) 2022 Nuvoton technology corporation
  * All rights reserved.
  *
- * rpmsg can interact with RTP M4 OpenAMP sample code.
+ * This sample demonstrates bidirectional data transmission between
+ * the A35 core and the RTP core.
+ * 
+ * Note:
+ * The sample provides two modes: (a) Both cores send data through a
+ * periodic timer, and (b) Free run mode, which can be switched through
+ * "TXRX_FREE_RUN".
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,6 +47,13 @@
 /* Debug level 0~2 */
 #define RPMSG_DEBUG_LEVEL      1
 
+#define TXRX_FREE_RUN          0
+
+/* The period of timer for handshake flow control */
+#if (TXRX_FREE_RUN == 0)
+	#define ACK_TIMER_SEC      0
+	#define ACK_TIMER_USEC     10000 /* 1000 < ACK_TIMER_USEC < 10^6 */
+#endif
 /**
  * @brief CMD frame
  * ---Appl Level---
@@ -111,11 +124,13 @@ struct ma35_rpmsg {
 	int tx_process;
 	int tx_en;
 	int rx_en;
+	int tx_trigger;
 	rpmsg_tx_cb_t tx_cb;
 	rpmsg_rx_cb_t rx_cb;
 };
 
 struct ma35_rpmsg rpmsg;
+struct itimerval ts;
 int fd[2];
 
 /**
@@ -189,15 +204,19 @@ int txdata_pack(unsigned char *txbuffer, int *len)
 {
 	unsigned int subCmd[4] = {0};
 
-	if(rpmsg.tx_cb == NULL)
+	memcpy(subCmd, txbuffer, SUBCMD_LEN);
+
+	if(rpmsg.tx_cb == NULL || rpmsg.tx_server_seq != rpmsg.rx_client_seq) {
+		*len = SUBCMD_LEN;
 		return 0;
+	}
 
 	if(rpmsg.tx_cb(txbuffer + SUBCMD_LEN, len)) {
 		subCmd[0] |= SUBCMD_SEQ;
-		subCmd[1] |= ++rpmsg.tx_server_seq & SEQ_DIGITS;
+		subCmd[1] = ++rpmsg.tx_server_seq & SEQ_DIGITS;
 		memcpy(txbuffer, subCmd, SUBCMD_LEN);
 		*len += SUBCMD_LEN;
-		if (rpmsg.tx_server_seq%1000 == 0 && rpmsg.tx_server_seq)
+		if (rpmsg.tx_server_seq%100 == 0 && rpmsg.tx_server_seq)
 			sysprintf("Send #%d\n", rpmsg.tx_server_seq);
 		return 1;
 	}
@@ -210,7 +229,63 @@ int txdata_pack(unsigned char *txbuffer, int *len)
 	return 0;
 }
 
-void seqack_append(void *Tx_Buffer, int len)
+int ma35_rpmsg_reset(struct ma35_rpmsg *rpmsg)
+{
+	unsigned char Tx_Buffer[SUBCMD_LEN*2];
+	int ret, err;
+
+	if(rpmsg->status_flag & SUBCMD_EXIT)
+		return 0;
+
+	if(rpmsg->status_flag & SUBCMD_START) {
+		rpmsg->tx_server_seq = rpmsg->tx_client_seq = 0;
+    	rpmsg->rx_server_seq = rpmsg->rx_client_seq = 0;
+		rpmsg->status_flag = 0;
+	}
+
+	printf("Attempting to reconnect...\n");
+
+	/* A start cmd to release RTP */
+	while(1) {
+		struct pollfd fds[] = {
+		{
+			.fd = fd[1],
+			.events = POLLOUT },
+		};
+
+		memset(rpmsg->subCmd, 0, sizeof(rpmsg->subCmd));
+		rpmsg->subCmd[0] |= SUBCMD_START;
+
+		memcpy(Tx_Buffer, rpmsg->subCmd, SUBCMD_LEN);
+		// tell M4 rpsmg window size
+		*(unsigned int *)(Tx_Buffer + SUBCMD_LEN) = RPMSG_WND;
+
+		ret = write(fd[1], Tx_Buffer, SUBCMD_LEN + 4);
+		if (ret < 0) {
+			printf("\n Failed to write#3 \n");
+			while(1);
+		}
+
+		while(1) {
+			err = poll(fds, 1, -1);
+
+			if ((err == -1) || (err == 0)) {
+				//sysprintf("\n w1=%d ", err);
+			}
+			else {
+				break;
+			}
+			if (rpmsg->status_flag & SUBCMD_EXIT)
+				return 0;
+		}
+		printf("\n Write start CMD to RTP, demo start! \n");
+		break;
+	}
+
+	return 0;
+}
+
+void seqack_append(void *Tx_Buffer, int len, int ack)
 {
 	unsigned int subCmd[4];
 	int ret;
@@ -224,7 +299,10 @@ void seqack_append(void *Tx_Buffer, int len)
 	};
 
 	rpmsg.seq_start = rpmsg.tx_client_seq;
-	subCmd[0] = *(unsigned int *)Tx_Buffer | SUBCMD_SEQACK;
+	if(ack)
+		subCmd[0] = *(unsigned int *)Tx_Buffer | SUBCMD_SEQACK;
+	else
+		subCmd[0] = *(unsigned int *)Tx_Buffer;
 	subCmd[1] = *((unsigned int *)Tx_Buffer + 1);
 	subCmd[2] = rpmsg.seq_start & SEQ_DIGITS;
 	memcpy(Tx_Buffer, subCmd, SUBCMD_LEN);
@@ -238,20 +316,26 @@ void seqack_append(void *Tx_Buffer, int len)
 	}
 	rpmsg.ack_ready = ACK_READY;
 
-	if (rpmsg.tx_client_seq%1000 == 0 && rpmsg.tx_client_seq)
+	if (rpmsg.tx_client_seq%100 == 0 && rpmsg.tx_client_seq && ack)
 		sysprintf("ack #%d\n", rpmsg.tx_client_seq);
+	if(rpmsg.tx_server_seq != rpmsg.rx_client_seq) {
+		fds->events = POLLIN;
 
-	while(1) {
-		err = poll(fds, 1, 1000);
+		while(1) {
+			err = poll(fds, 1, 1000);
 
-		if (err == -1) {
-			sysprintf("\n w3=%d ", err);
+			if (err == -1) {
+				sysprintf("\nLost response from remote. w3=%d\n\n", err);
+				rpmsg.status_flag |= SUBCMD_START;
+				ma35_rpmsg_reset(&rpmsg);
+				return;
+			}
+			else {
+				break;
+			}
+			if (rpmsg.status_flag & SUBCMD_EXIT)
+				return;
 		}
-		else {
-			break;
-		}
-		if (rpmsg.status_flag & SUBCMD_EXIT)
-			return;
 	}
 }
 
@@ -281,7 +365,7 @@ int ma35_rpmsg_kick(struct ma35_rpmsg *rpmsg, unsigned char *Tx_Buffer)
 		}
 
 		while(1) {
-			err = poll(fds, 1, 10000);
+			err = poll(fds, 1, -1);
 
 			if ((err == -1) || (err == 0)) {
 				sysprintf("\n w1=%d ", err);
@@ -345,9 +429,10 @@ int ma35_rpmsg_open(struct ma35_rpmsg *rpmsg, int *fd, struct rpmsg_endpoint_inf
 int rpmsg_ack_process(struct ma35_rpmsg *rpmsg, struct pollfd *fds, unsigned char *Rx_Buffer, int *len)
 {
 	int err, ret;
+	static int lastseq = -1;
 
 	while(1) {
-		err = poll(fds, 1, 1000);
+		err = poll(fds, 1, 1);
 
 		if (err == 1) {
 			do {
@@ -359,7 +444,6 @@ int rpmsg_ack_process(struct ma35_rpmsg *rpmsg, struct pollfd *fds, unsigned cha
 			break;
 		}
 		else if (err == 0) {
-			if(rpmsg->status_flag & SUBCMD_EXIT)
 				return -1;
 		}
 	}
@@ -368,6 +452,13 @@ int rpmsg_ack_process(struct ma35_rpmsg *rpmsg, struct pollfd *fds, unsigned cha
 		// update seq from RTP
 		rpmsg->rx_server_seq = *(unsigned int *)(Rx_Buffer + SERVER_SEQ_OFFSET) & SEQ_DIGITS;
 		rpmsg->tx_client_seq = rpmsg->rx_server_seq;
+		if(lastseq != rpmsg->rx_server_seq)
+			rpmsg->rx_en = 1;
+		lastseq = rpmsg->rx_server_seq;
+	}
+
+	if (*(unsigned int *)Rx_Buffer & SUBCMD_SEQACK) {
+		rpmsg->rx_client_seq = *(unsigned int *)(Rx_Buffer + CLIENT_SEQ_OFFSET);
 	}
 
 	return 0;
@@ -377,13 +468,10 @@ int ma35_rpmsg_read(struct ma35_rpmsg *rpmsg, struct pollfd *fds, unsigned char 
 {
 	*len = MAILBOX_LEN;
 	if(rpmsg_ack_process(rpmsg, fds, Rx_Buffer, len)) {
-		printf("failed to read.\n");
 		return -1;
 	}
 
-	rpmsg->rx_en = 1;
-
-	if(rpmsg->rx_cb)
+	if(rpmsg->rx_cb && rpmsg->rx_en)
 		rpmsg->rx_cb(Rx_Buffer + SUBCMD_LEN, *len - SUBCMD_LEN);
 
 	return 0;
@@ -391,16 +479,35 @@ int ma35_rpmsg_read(struct ma35_rpmsg *rpmsg, struct pollfd *fds, unsigned char 
 
 int ma35_rpmsg_send(struct ma35_rpmsg *rpmsg, unsigned char *Tx_Buffer, int *len)
 {
-	memset(Tx_Buffer, 0, sizeof(Tx_Buffer));
-	rpmsg->tx_process = txdata_pack(Tx_Buffer, len);
-
-	if (rpmsg->tx_process) {
-		rpmsg->ack_ready = ACK_READY;
-		seqack_append(Tx_Buffer, *len);
-		rpmsg->tx_process = 0;
+	unsigned int subCmd[4] = {0};
+	int txlen;
+	if(!rpmsg->tx_trigger)
+	{
+		if(rpmsg->rx_en) {
+			memcpy(subCmd, Tx_Buffer, SUBCMD_LEN);
+			if(rpmsg->tx_server_seq != rpmsg->rx_client_seq)
+				txlen = MAILBOX_LEN;
+			else
+				txlen = SUBCMD_LEN;
+			seqack_append(subCmd, txlen, 1);
+			rpmsg->rx_en = 0;
+		}
+		return 0;
 	}
 
+	rpmsg->tx_process = txdata_pack(Tx_Buffer, len);
+
+	if(rpmsg->rx_en) {
+		seqack_append(Tx_Buffer, *len, 2);
+		rpmsg->rx_en = 0;
+	} else {
+		seqack_append(Tx_Buffer, *len, 0);
+	}
+
+	rpmsg->tx_trigger = 0;
 	rpmsg->tx_en = 1;
+
+	//printf("%d %d %d\n", rpmsg->tx_server_seq, rpmsg->rx_client_seq, rpmsg->rx_server_seq);
 
 	return 0;
 }
@@ -413,7 +520,7 @@ int ma35_rpmsg_cmd_handler(struct ma35_rpmsg *rpmsg, struct pollfd *fds)
 	if(rpmsg->tx_en)
 		rpmsg->tx_en = 0;
 	else
-		seqack_append(subCmd, SUBCMD_LEN);
+		seqack_append(subCmd, SUBCMD_LEN, 1);
 
 	if(rpmsg->rx_en)
 		rpmsg->rx_en = 0;
@@ -435,6 +542,55 @@ int ma35_rpmsg_cmd_handler(struct ma35_rpmsg *rpmsg, struct pollfd *fds)
 	return 0;
 }
 
+void set_timer(struct itimerval *ts)
+{
+#if (TXRX_FREE_RUN != 1)
+	ts->it_interval.tv_sec = ACK_TIMER_SEC;
+	ts->it_interval.tv_usec = ACK_TIMER_USEC;
+	ts->it_value.tv_sec = ACK_TIMER_SEC;
+	ts->it_value.tv_usec = ACK_TIMER_USEC;
+	setitimer(ITIMER_REAL, ts, NULL);
+#endif
+}
+
+void del_timer(struct itimerval *ts)
+{
+#if (TXRX_FREE_RUN != 1)
+	ts->it_interval.tv_sec = 0;
+	ts->it_interval.tv_usec = 0;
+	ts->it_value.tv_sec = 0;
+	ts->it_value.tv_usec = 0;
+	setitimer(ITIMER_REAL, ts, NULL);
+#endif
+}
+
+/**
+ * @return 0 : start tx, else : busy
+ */
+int rpmsg_tx_trigger()
+{
+    if(rpmsg.tx_trigger)
+        return -1;
+    rpmsg.tx_trigger = 1;
+    return 0;
+}
+
+/**
+ * @return 1 : send finished, else : busy
+ */
+int rpmsg_tx_acked()
+{
+    return (rpmsg.tx_server_seq == rpmsg.rx_client_seq) && (rpmsg.tx_trigger == 0);
+}
+
+void alarm_handler(int signo)
+{
+	rpmsg.tx_trigger = 1;
+
+	if(rpmsg.status_flag & SUBCMD_EXIT)
+		del_timer(&ts);
+}
+
 /**
  *@breif 	main()
  */
@@ -452,6 +608,17 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
+#if (TXRX_FREE_RUN != 1)
+
+	if (signal(SIGALRM, alarm_handler) == SIG_ERR) {
+		printf("Fail ot set alarm signal");
+		return -1;
+	}
+
+	ts.it_interval.tv_sec = 0;
+	ts.it_interval.tv_usec = 0;
+	ts.it_value.tv_sec = 0;
+#endif
 	printf("\n Demo rpmsg v2 \n");
 	printf("\n Please ensure that the configurations in device tree are compatible with RTP.\n");
 
@@ -461,6 +628,11 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
+#if (TXRX_FREE_RUN != 1)
+	// start the periodic timer
+	set_timer(&ts);
+#endif
+
 	/* Start demo */
 	while(1) {
 		struct pollfd fds[] = {
@@ -468,13 +640,17 @@ int main(int argc, char **argv)
 			.fd = fd[1],
 			.events = POLLIN, },
 		};
+#if (TXRX_FREE_RUN == 1)
+		rpmsg.tx_trigger = 1;
+#endif
+		ma35_rpmsg_send(&rpmsg, Tx_Buffer, &len);
 
 		ma35_rpmsg_read(&rpmsg, fds, Rx_Buffer, &len);
 
-		ma35_rpmsg_send(&rpmsg, Tx_Buffer, &len);
-
-		if(ma35_rpmsg_cmd_handler(&rpmsg, fds))
+		if(rpmsg.status_flag & SUBCMD_EXIT) {
+			close(fd[1]);
 			break;
+		}
 	}
 
 	return 0;
