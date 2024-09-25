@@ -86,7 +86,7 @@ MA35 series does not have a specific hardware support for inter-Processor interr
 ```dts
     reserved-memory {
         amp_buf: amp_buf@0 {
-            reg = <0x0 0x8A000000 0x0 0x20000> /* 128KB for amp shared memory */
+            reg = <0x0 0x84008000 0x0 0x20000> /* 128KB for amp shared memory */
             no-map;
         };
     };
@@ -102,7 +102,7 @@ MA35 series does not have a specific hardware support for inter-Processor interr
 2. Core1 settings:
 [OpenAMPConfig.h](https://github.com/OpenNuvoton/MA35D1_NonOS_BSP/blob/master/SampleCode/OpenAMP/AMP_Core1RTOS/port/OpenAMPConfig.h)
 ```c
-    #define SHARED_RSC_TABLE       ( 0x8A000000UL )
+    #define SHARED_RSC_TABLE       ( 0x84008000UL )
     #define RING_TX_SIZE           ( 0x8000 )
     #define RING_RX_SIZE           ( 0x8000 )
     #define NO_NAME_SERVICE        ( 32 ) /* Number of char supported by ns (must be aligned with word) */
@@ -455,7 +455,7 @@ Image of core1, embedded in the kernel image, is loaded by core0 Linux via ARM T
 ```dts
     reserved-memory {
         amp_buf: amp_buf@0 {
-            reg = <0x0 0x8A000000 0x0 0x20000> /* 128KB for amp shared memory */
+            reg = <0x0 0x84008000 0x0 0x20000> /* 128KB for amp shared memory */
             no-map;
         };
     };
@@ -473,7 +473,7 @@ Image of core1, embedded in the kernel image, is loaded by core0 Linux via ARM T
     **Note: User needs to account for the size of resource table and reserve memory in the DTS that is slightly larger than the *SHARED_MEM_SIZE*. If the reserved shared memory is insufficient, AMP driver will issue a warning message. By default, 2KB is enough.**
 
 ```c
-    #define SHARED_RSC_TABLE       ( 0x8A000000UL )
+    #define SHARED_RSC_TABLE       ( 0x84008000UL )
     #define RING_TX_SIZE           ( 0x8000 )
     #define RING_RX_SIZE           ( 0x8000 )
     #define SHARED_MEM_SIZE        ( RING_TX_SIZE + RING_RX_SIZE )
