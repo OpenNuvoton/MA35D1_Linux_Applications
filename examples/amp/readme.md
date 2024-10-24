@@ -515,7 +515,21 @@ Image of core1, embedded in the kernel image, is loaded by core0 Linux via ARM T
 7. Rebuild all
 
 ```cmd
+    $ make arm-trusted-firmware-dirclean
     $ make arm-trusted-firmware-rebuild uboot-rebuild linux-rebuild; make
+```
+
+**Note: To use UART16 for debugging, please assign the attribution of UART16 to Core1 in TF-A as follows:**
+
+[ma35d1.dtsi](https://github.com/OpenNuvoton/MA35D1_arm-trusted-firmware-v2.3/blob/master/fdts/ma35d1.dtsi)
+```c
+    sspcc: sspcc@404F0000 {
+        compatible = "nuvoton,ma35d1-sspcc";
+            reg = <0x0 0x404F0000 0x0 0x1000>;
+            config = <UART0_TZNS>,
+                     ...
+                     <UART16_TZNS>,
+	};
 ```
 
 ## Version
