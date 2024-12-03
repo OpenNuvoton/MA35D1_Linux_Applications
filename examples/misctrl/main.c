@@ -33,14 +33,15 @@
 #define SDRAM_AUTOREF_DISABLE	0x1382
 #define FORCE_CHIP_RESET	0x1401
 #define GET_BL2_OFFSET		0x1501
+#define GET_REGISTER		0x1511
 
 int main(int argc, char **argv)
 {
+	unsigned int i, reg_addr, val;
 	int fd_misctrl, fd_temp;
 	char temp[16];
 	int rev;
 	int j_temp;
-	unsigned int i, val;
 
 	printf("******************************************************\n");
 	printf("*  Nuvoton MA35 Series SoC misctrl demo.             *\n");
@@ -67,6 +68,15 @@ int main(int argc, char **argv)
 	printf("+----------------------------------------+\n");
 	val = ioctl(fd_misctrl, GET_BL2_OFFSET, 0);
 	printf("The BL2 offset is 0x%x\n\n\n", val);
+
+	printf("+----------------------------------------+\n");
+	printf("|  Get Registers                         |\n");
+	printf("+----------------------------------------+\n");
+	for (reg_addr = 0x40410000; reg_addr <= 0x40410184; reg_addr += 4) {
+		val = ioctl(fd_misctrl, GET_REGISTER, reg_addr);
+		printf("Register 0x%08x = 0x%08x\n", reg_addr, val);
+	}
+	printf("\n\n");
 
 	printf("+----------------------------------------+\n");
 	printf("|  Disable SDRAM auto-refresh            |\n");
