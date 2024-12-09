@@ -5,6 +5,7 @@
  * This project demonstrates AMP between dual cores of A35,
  * with core0 running Linux and core1 running FreeRTOS.
  * Fill in your endpoints in "eptinst[]" to complete the design.
+ * Please ensure that RPMSG_CTRL_DEV_ID matches the device ID.
  *
  * Core0 (this core)     Core1
  *   A (Tx & Rx)  <----->  B (High freq. short packet)
@@ -37,6 +38,8 @@
 #include <linux/ioctl.h>
 #include <termios.h>
 #include <zlib.h>
+
+#define RPMSG_CRTL_DEV_ID   0
 
 #define RPMSG_CREATE_EPT_IOCTL _IOW(0xb5, 0x1, struct rpmsg_endpoint_info)
 #define RPMSG_DESTROY_EPT_IOCTL _IO(0xb5, 0x2)
@@ -96,7 +99,7 @@ struct amp_endpoint eptinst[] = {
 /**
  * @brief Create endpoint
  * 
- * @param fd file desc of AMP (rpmsg_ctrl0)
+ * @param fd file desc of AMP (rpmsg_ctrl)
  * @param amp_ept pointer to an inst of amp_endpoint
  * @return int 
  */
@@ -129,14 +132,16 @@ int amp_create_ept(int *fd, struct amp_endpoint *amp_ept)
 /**
  * @brief Start AMP
  * 
- * @param fd file desc of AMP (rpmsg_ctrl0)
+ * @param fd file desc of AMP (rpmsg_ctrl)
  * @return int 
  */
 int amp_open(int *fd)
 {
 	int i, ret, inst;
+	char dev_path[32];
 
-	fd[0] = open("/dev/rpmsg_ctrl0", O_RDWR | O_NONBLOCK);
+	snprintf(dev_path, sizeof(dev_path), "/dev/rpmsg_ctrl%d", RPMSG_CRTL_DEV_ID);
+	fd[0] = open(dev_path, O_RDWR | O_NONBLOCK);
 	if (fd[0] < 0) {
 		printf("\nFailed to open AMP.\n");
 		return -ENOENT;
