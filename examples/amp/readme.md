@@ -13,7 +13,7 @@ MA35-AMP is based on RPMSG, which provides a framework for inter-processor commu
 
 *Device*
 ```c
-    /dev/rpmsg_ctrl0
+    /dev/rpmsg_ctrl#
 ```
 *Endpoints*
 ```c
@@ -146,12 +146,14 @@ This sample code uses pthread to demonstrates 3 tasks and 6 endpoints: The 1st t
 
 1. Flow
 
-    - Open the device **rpmsg_ctrl0** 
+    - Open the device **rpmsg_ctrl**
     - Create Tx & Rx rpmsg endpoints
     - Open all endpoints
     - Wait until the binding is successful
     - Tx endpoints: write
     - Rx endpoints: poll for event
+
+**Note: The device ID of rpmsg_ctrl may vary depending on the device. Please ensure that #define RPMSG_CTRL_DEV_ID matches the device ID before starting development.**
 
 2. IOCTL
 
@@ -203,7 +205,7 @@ This sample code uses pthread to demonstrates 3 tasks and 6 endpoints: The 1st t
     /**
     * @brief Create endpoint
     * 
-    * @param fd file desc of AMP (rpmsg_ctrl0)
+    * @param fd file desc of AMP (rpmsg_ctrl)
     * @param amp_ept pointer to an inst of amp_endpoint
     * @return int 
     */
@@ -215,7 +217,7 @@ This sample code uses pthread to demonstrates 3 tasks and 6 endpoints: The 1st t
     /**
     * @brief Start AMP
     * 
-    * @param fd file desc of AMP (rpmsg_ctrl0)
+    * @param fd file desc of AMP (rpmsg_ctrl)
     * @return int 
     */
     int amp_open(int *fd)
