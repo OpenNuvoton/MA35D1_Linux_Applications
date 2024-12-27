@@ -1,4 +1,7 @@
 # MA35D1-Rpmsg
+
+**Note: MA35D1-RPMSG is a legacy. Please refer to [MA35D1-AMP](https://github.com/OpenNuvoton/MA35D1_Linux_Applications/tree/master/examples/amp) for better performance and stability.**
+
 Nuvoton provides inter-processor communication between the A35 core and RTP core based on the RPMSG framework using OpenAMP.
 
 # OpenAMP

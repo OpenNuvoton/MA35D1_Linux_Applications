@@ -1,40 +1,43 @@
 # MA35-AMP
-Nuvoton provides inter-processor communication between the dual-core A35 processors based on the RPMSG framework using OpenAMP.
+Nuvoton provides inter-processor communication based on the RPMSG framework using OpenAMP.
+
+- **[AMP-M](https://github.com/OpenNuvoton/MA35D1_RTP_BSP/tree/master/SampleCode/OpenAMP/AMP_CoreMRTOS)** : AMP between the core A35 and core CM4 for MA35D1.
+
+- **[AMP-A](https://github.com/OpenNuvoton/MA35D1_NonOS_BSP/tree/master/SampleCode/OpenAMP/AMP_Core1RTOS)** : AMP between the dual-core A35 processors for MA35 family.
 
 # OpenAMP
-OpenAMP is a third-party open-source software that provides inter-core communication interfaces and frameworks such as REMOTEPROC, RPMSG, and VIRTIO. This following document will explain the architecture and usage of MA35-AMP.
+[OpenAMP](https://github.com/OpenAMP/open-amp?tab=readme-ov-file) is a third-party open-source software that provides inter-core communication interfaces and frameworks such as REMOTEPROC, RPMSG, and VIRTIO. This following document will explain the architecture and usage of MA35-AMP.
 
-[OpenAMP](https://github.com/OpenAMP/open-amp?tab=readme-ov-file)
-
-## AMP Architecture
+## Introduction
 MA35-AMP is based on RPMSG, which provides a framework for inter-processor communication and is complemented by IOCTL to make the design more flexible. The architecture uses a single device to manage multiple RPMSG endpoints. 
 
 - **AMP**
 
-*Device*
-```c
-    /dev/rpmsg_ctrl#
-```
-*Endpoints*
-```c
-    /dev/rpmsg#
-```
+    - Device
+        ```c
+        /dev/rpmsg_ctrl#
+        ```
+
+    - Endpoints
+        ```c
+        /dev/rpmsg#
+        ```
+
 - **IOCTL**
 
-*rpmsg_ctrl*
-```c
-    open(), close()
-```
-*rpmsg endpoints*
-```c
-    ioctl(create/destroy), write(), poll(), read()
-```
+    - rpmsg_ctrl
+        ```c
+        open(), close()
+        ```
 
-# Linux driver
-MA35 series does not have a specific hardware support for inter-Processor interrupt (IPI). Instead, it uses a timer interrupt to notify the remote core.
+    - rpmsg endpoints
+        ```c
+        ioctl(create/destroy), write(), poll(), read()
+        ```
 
-## MA35-AMP driver
-[ma35_amp.c](https://github.com/OpenNuvoton/MA35D1_linux-5.10.y/blob/master/drivers/rpmsg/ma35_amp.c)
+# AMP Architecture
+
+The MA35D1 platform features dedicated IPI support between the A35 and CM4 cores via **HWSEM**. However, the dual-core A35 does not have direct hardware support for IPI and instead uses a **timer** interrupt for notifications.
 
 - **Features**
     - Full-duplex
@@ -73,38 +76,174 @@ MA35 series does not have a specific hardware support for inter-Processor interr
 
 - **Parameters for shared memory and IPI**
 
-    - The user can set the TX and RX shared memory sizes in the core1 project, while core0 Linux reserves the required memory size.
+    - The user can set the TX and RX shared memory sizes in the Core1/CM4 project, while Core0 Linux reserves the required memory size.
 
     - Please ensure that the base addresses are the same.
 
-    - Please ensure that the timers for txipi and rxipi, used to support IPI, are matching.
+    - Please ensure that the hardware for txipi and rxipi, used to support IPI, are matching.
 
-    - The maximum value for **NO_NAME_SERVICE** should not exceed 32 characters.
+    - The maximum value for `NO_NAME_SERVICE` should not exceed 32 characters.
+
+- **Limitations**
+
+    - Binding other than one-to-one is not supported.
+
+    <!--- The MA35-AMP driver supports RX queue and TX blocking. However, in cases where the length of the received packet is unknown and the sender's frequency exceeds the receiver's, the RX packet may receive merged packets. The user can design a length field within the packet to avoid this limitation.-->
+
+## Explanation of parameters
+
+The configuration of related parameters is primarily completed on the FreeRTOS side. Linux AMP driver will attempt to parse the remote core and verify its correctness. The following describes all parameters related to **AMP-A**/**AMP-M**, and it is **not** recommended to modify any parameters not mentioned.
+
+- **Core0 device tree:**
+
+    - Reserved memory node for AMP shared memory. The base addess and size of `rpmsg_buf` can be modified according to the application.
+        ```dts
+        memory-region = <&rpmsg_buf>;
+        ```
+
+    - Assign dedicated hardware to support IPI. For example, HWSEM channels 6 and 7 are used as RX/TX IPI in this case.
+        ```dts
+        rxipi = <&hwsem 6>;
+        txipi = <&hwsem 7>;
+        ```
+
+- **Core1/CM4 FreeRTOS:**
+
+    - Base address of AMP shared memory.
+        ```c
+        #define SHARED_RSC_TABLE       ( 0x84000000UL )
+        ```
+
+    - Shared memory includes the resource table and the Tx/Rx buffer. `SHARED_BUF_OFFSET` is the memory allocated for the resource table, which is not configurable but must be reserved.
+        ```c
+        #define SHARED_MEM_PA          ( SHARED_RSC_TABLE + SHARED_BUF_OFFSET )
+        ```
+
+    - Size allocated for TX and Rx shared memory.
+        ```c
+        #define RING_TX_SIZE           ( 0x4000 )
+        #define RING_RX_SIZE           ( 0x4000 )
+        ```
+
+    - Maximum number of characters used for the name of an endpoint.
+        ```c
+        #define NO_NAME_SERVICE        ( 32 )
+        ```
+
+    - Assign dedicated hardware to support IPI. For example, HWSEM channels 7 and 6 are used as RX/TX IPI in this case.
+        ```c
+        #define RXIPI_BASE             ( HWSEM0 )
+        #define RXIPI_CH_SEL           ( 7 )
+        #define TXIPI_BASE             ( HWSEM0 )
+        #define TXIPI_CH_SEL           ( 6 )
+        ```
+
+    - Number of Rx buffer queues for each Rx endpoint.
+        ```c
+        #define RXBUF_QUEUE_SIZE       3
+        ```
+
+    - Maximum number of Tx or Rx endpoints.
+        ```c
+        #define VRING_SIZE             8
+        ```
+
+## AMP-M driver
+
+[ma35d1_ampm.c](https://github.com/OpenNuvoton/MA35D1_linux-5.10.y/blob/master/drivers/rpmsg/ma35d1_ampm.c)
+
+1. Core0 DTS settings:
+[ma35d1.dtsi](https://github.com/OpenNuvoton/MA35D1_linux-5.10.y/blob/master/arch/arm64/boot/dts/nuvoton/ma35d1.dtsi)
+
+Here are the configurations for using AMP-M in Buildroot menuconfig. By default, the image file for the remote core CM4 is `AMP_CoreMRTOS.bin`.
+```dts
+    Bootloaders  --->
+        [*]   Add SCP BL2 image into FIP Image
+                Load Image into FIP Image (RTP M4 Image)  --->
+        [*]     IPI support
+        (0x84000000) Base address of shared memory for AMP
+        (0x8800) Size of shared memory for AMP
+        (RTP-BSP/AMP_CoreMRTOS.bin) SCP_BL2 binary file names
+```
+
+After the build process, the memory region `rpmsg_buf` will be set to the range specified by user in menuconfig.
+```dts
+    reserved-memory {
+        rpmsg_buf: rpmsg_buf@0 {
+			reg = <0x0 0x84000000 0x0 0x8800>;
+			no-map;
+		};
+    };
+    ampm: ampm {
+		compatible = "nuvoton,ma35d1-ampm";
+		memory-region = <&rpmsg_buf>;
+		rxipi = <&hwsem 6>;
+		txipi = <&hwsem 7>;
+		status = "okay";
+	};
+```
+
+2. CM4 settings:
+[OpenAMPConfig.h](https://github.com/OpenNuvoton/MA35D1_RTP_BSP/blob/master/SampleCode/OpenAMP/AMP_CoreMRTOS/port/OpenAMPConfig.h)
+
+Please note that the base address `rpmsg_buf` matches `SHARED_RSC_TABLE` and is consistent with the hardware used to support `rxipi` and `txipi`. Since OpenAMP uses resource table as descriptors, the size of the reserved memory must be greater than `RING_TX_SIZE` + `RING_RX_SIZE`. The additional size depends on `VRING_SIZE`, which also represents the maximum number of Tx or Rx endpoints. Generally, reserving **2KB** is sufficient. Driver will also report an warning if the reserved memory is insufficient.
+```c
+    #define SHARED_RSC_TABLE       ( 0x84000000UL )
+    #define RING_TX_SIZE           ( 0x4000 )
+    #define RING_RX_SIZE           ( 0x4000 )
+    #define NO_NAME_SERVICE        ( 32 ) /* Number of char supported by ns (must be aligned with word) */
+
+    #define RXIPI_BASE             ( HWSEM0 )
+    #define RXIPI_IRQ_NUM          (IRQn_Type)HWSEM0_IRQn
+    #define RXIPI_CH_SEL           ( 7 )
+    #define TXIPI_BASE             ( HWSEM0 )
+    #define TXIPI_CH_SEL           ( 6 )
+``` 
+
+## AMP-A driver
+[ma35_amp.c](https://github.com/OpenNuvoton/MA35D1_linux-5.10.y/blob/master/drivers/rpmsg/ma35_amp.c)
 
 1. Core0 DTS settings:
 [ma35xx.dtsi](https://github.com/OpenNuvoton/MA35D1_linux-5.10.y/blob/master/arch/arm64/boot/dts/nuvoton/ma35d1.dtsi)
+
+Here are the configurations for using AMP-A in Buildroot menuconfig. By default, the image file for the Core1 is `AMP_Core1RTOS.bin`.
+```dts
+    Bootloaders  --->
+        [*]   Add SCP BL2 image into FIP Image
+                Load Image into FIP Image (A35 Image)  --->
+        [*]     IPI support
+        (0x84000000) Base address of shared memory for AMP
+        (0x8800) Size of shared memory for AMP
+        (AMP_Core1RTOS.bin) SCP_BL2 binary file names
+        (0x88000000) The execution address of CORE1
+        (0x2000000) The execution size of CORE1
+```
+
+After the build process, the memory region `rpmsg_buf` will be set to the range specified by user in menuconfig.
 ```dts
     reserved-memory {
-        amp_buf: amp_buf@0 {
-            reg = <0x0 0x84008000 0x0 0x20000> /* 128KB for amp shared memory */
+        rpmsg_buf: rpmsg_buf@0 {
+            reg = <0x0 0x84000000 0x0 0x8800>
             no-map;
         };
     };
     amp: amp {
         comapaible = "nuvoton,ma35-amp";
-        memory-region = <&amp_buf>;
+        memory-region = <&rpmsg_buf>;
         rxipi = <&timer8>;
         txipi = <&timer9>;
-        status = "disabled";
+        status = "okay";
     };
 ```
 
 2. Core1 settings:
 [OpenAMPConfig.h](https://github.com/OpenNuvoton/MA35D1_NonOS_BSP/blob/master/SampleCode/OpenAMP/AMP_Core1RTOS/port/OpenAMPConfig.h)
+
+Please note that the base address `rpmsg_buf` matches `SHARED_RSC_TABLE` and is consistent with the hardware used to support `rxipi` and `txipi`. Since OpenAMP uses resource table as descriptors, the size of the reserved memory must be greater than `RING_TX_SIZE` + `RING_RX_SIZE`. The additional size depends on `VRING_SIZE`, which also represents the maximum number of Tx or Rx endpoints. Generally, reserving **2KB** is sufficient. Driver will also report an error if the reserved memory is insufficient.
 ```c
-    #define SHARED_RSC_TABLE       ( 0x84008000UL )
-    #define RING_TX_SIZE           ( 0x8000 )
-    #define RING_RX_SIZE           ( 0x8000 )
+    #define SHARED_RSC_TABLE       ( 0x84000000UL )
+    #define RING_TX_SIZE           ( 0x4000 )
+    #define RING_RX_SIZE           ( 0x4000 )
     #define NO_NAME_SERVICE        ( 32 ) /* Number of char supported by ns (must be aligned with word) */
 
     #define RXIPI_BASE             ( TIMER9 )
@@ -113,18 +252,12 @@ MA35 series does not have a specific hardware support for inter-Processor interr
     #define TXIPI_IRQ_NUM          (IRQn_ID_t)TMR8_IRQn
 ```
 
-- **Limitations**
-
-    - Binding other than one-to-one is not supported.
-
-    <!--- The MA35-AMP driver supports RX queue and TX blocking. However, in cases where the length of the received packet is unknown and the sender's frequency exceeds the receiver's, the RX packet may receive merged packets. The user can design a length field within the packet to avoid this limitation.-->
-
 ---
 
 # Applications
-Nuvoton provides sample code for Core0 running Linux and Core1 running FreeRTOS, demonstrating inter-processor communication between the dual-core A35 in the MA35-AMP architecture
+Nuvoton provides sample code demonstrating inter-processor communication in the MA35-AMP architecture, with Core0 running Linux and either Core1 or CM4 running FreeRTOS, showcasing communication between the dual-core A35 or between the A35 and CM4.
 
-The AMP architecture is based on RPMSG, which uses unified arguments for creating endpoints. The arguments for tx and rx are explained in the comments. Please do not modify this structure, even if you change **NO_NAME_SERVICE**, otherwise it will not be accepted by driver.
+The AMP architecture is based on RPMSG, which uses unified arguments for creating endpoints. The arguments for tx and rx are explained in the comments. Please do **not** modify this structure, even if you change `NO_NAME_SERVICE`, otherwise it will not be accepted by driver.
 
 **Note: To prevent shared memory fragmentation, memory requested by the endpoint is aligned to the appropriate size.**
 
@@ -137,11 +270,9 @@ The AMP architecture is based on RPMSG, which uses unified arguments for creatin
 ```
 The sample code provides a command interface to help users quickly understand the MA35-AMP architecture, and it also includes throughput measurement. Please refer to the source code for more details.
 
-## Linux application 
+## Linux application
 
-[amp.c](https://github.com/OpenNuvoton/MA35D1_Linux_Applications/blob/master/examples/amp/amp.c)
-
-This sample code uses pthread to demonstrates 3 tasks and 6 endpoints: The 1st task handles high-frequency short packet data exchange, the 2nd task manages low-frequency long packet data exchange, and the 3rd task demonstrates packet CRC verification.
+This [sample code](https://github.com/OpenNuvoton/MA35D1_Linux_Applications/blob/master/examples/amp/amp.c) uses pthread to demonstrates 3 tasks and 6 endpoints: The 1st task handles high-frequency short packet data exchange, the 2nd task manages low-frequency long packet data exchange, and the 3rd task demonstrates packet CRC verification.
 
 
 1. Flow
@@ -263,8 +394,9 @@ This sample code uses pthread to demonstrates 3 tasks and 6 endpoints: The 1st t
 
 ---
 
-## RTP application 
+## FreeRTOS application 
 
+[AMP_CoreMRTOS](https://github.com/OpenNuvoton/MA35D1_RTP_BSP/tree/master/SampleCode/OpenAMP/AMP_CoreMRTOS), 
 [AMP_Core1RTOS](https://github.com/OpenNuvoton/MA35D1_NonOS_BSP/tree/master/SampleCode/OpenAMP/AMP_Core1RTOS)
 
 This sample code based on FreeRTOS demonstrates 3 tasks and 6 endpoints: The 1st task handles high-frequency short packet data exchange, the 2nd task manages low-frequency long packet data exchange, and the 3rd task demonstrates packet CRC verification.
@@ -436,11 +568,165 @@ int ma35_rpmsg_remote_ready(void);
 ---
 
 # Summary
-This document explains the architecture of the MA35-AMP driver. Nuvoton also provides sample codes for inter-processor communication (IPC) between dual-core A35 processors , which users can follow for development.
+This document explains the architecture of the MA35-AMP. Nuvoton also provides sample codes for inter-processor communication (IPC) with Core0 running Linux and either Core1 or CM4 running FreeRTOS, which users can follow for development.
 
-## Start using MA35-AMP
+## Getting started with AMP-M
 
-[Buildroot](https://github.com/OpenNuvoton/buildroot_2024)
+**Node: AMP-M is available only for MA35D1 platform with RTP (CM4)**
+
+The CM4 image supports two loading methods: it can be embedded within the kernel image and loaded by Core0 Linux via ARM Trusted Firmware (TFA), or it can be loaded in user space using command through the **remoteproc** driver. Please follow the steps to complete the kernel image.
+
+### Method 1: Loaded by TFA
+
+1. Normal kernel image build using [Buildroot](https://github.com/OpenNuvoton/buildroot_2024).
+```cmd
+    $ make <ma35d1_defconfig>
+    $ make
+```
+
+2. Reserved memory for AMP and selected `hwsem` to support IPI. By default, 32KB is reserved; however it will be overriden by step 5. And hwsem 6 and hwsem 7 are used as `rxipi` and `txipi`, respectively.
+
+    [ma35d1.dtsi](https://github.com/OpenNuvoton/MA35D1_linux-5.10.y/blob/master/arch/arm64/boot/dts/nuvoton/ma35d1.dtsi)
+
+```dts
+    reserved-memory {
+        rpmsg_buf: rpmsg_buf@0 {
+			reg = <0x0 0x84000000 0x0 0x8000>;
+			no-map;
+		};
+    };
+
+    ampm: ampm {
+		compatible = "nuvoton,ma35d1-ampm";
+		memory-region = <&rpmsg_buf>;
+		rxipi = <&hwsem 6>;
+		txipi = <&hwsem 7>;
+		status = "okay";
+	};
+```
+
+3. Ensure that the configurations in CM4 project match the settings in the DTS.
+
+    [OpenAMPConfig.h](https://github.com/OpenNuvoton/MA35D1_RTP_BSP/blob/master/SampleCode/OpenAMP/AMP_CoreMRTOS/port/OpenAMPConfig.h)
+
+```c
+    #define SHARED_RSC_TABLE       ( 0x84000000UL )
+    #define RING_TX_SIZE           ( 0x4000 )
+    #define RING_RX_SIZE           ( 0x4000 )
+    #define SHARED_MEM_SIZE        ( RING_TX_SIZE + RING_RX_SIZE )
+
+    #define RXIPI_BASE             ( HWSEM0 )
+    #define RXIPI_IRQ_NUM          (IRQn_Type)HWSEM0_IRQn
+    #define RXIPI_CH_SEL           ( 7 )
+    #define TXIPI_BASE             ( HWSEM0 )
+    #define TXIPI_CH_SEL           ( 6 )
+```
+
+4. Prepare for CM4 image and copy binary to `images/RTP-BSP` directory.
+```cmd
+    $ cp AMP_CoreMRTOS.bin /path/to/buildroot/output/images/RTP-BSP
+```
+
+5. In Buildroot's menuconfig, reserve 34 KB (0x8800) for shared memory here. User needs to account for the size of resource table and reserve memory in the DTS that is slightly larger than the `SHARED_MEM_SIZE`. If the reserved shared memory is insufficient, AMP driver will issue a warning message. By default, 2KB is enough. Another example: if user allocates 64 KB for `SHARED_MEM_SIZE`, please reserve 66 KB of shared memory.
+```cmd
+    $ make menuconfig
+    Bootloaders  --->
+        [*]   Add SCP BL2 image into FIP Image
+                Load Image into FIP Image (RTP M4 Image)  --->
+        [*]     IPI support
+        (0x84000000) Base address of shared memory for AMP
+        (0x8800) Size of shared memory for AMP
+        (RTP-BSP/AMP_CoreMRTOS.bin) SCP_BL2 binary file names
+```
+
+6. Menuconfig for Kernel
+```cmd
+    $ make linux-menuconfig
+    Device Drivers --->
+        Rpmsg drivers --->
+        -*- RPMSG device interface
+        < > MA35D1 Shared Memory Driver
+        <*> MA35D1 AMP-M Driver
+        < > MA35 series AMP-A Driver
+```
+
+7. Rebuild all
+```cmd
+    $ make arm-trusted-firmware-dirclean
+    $ make arm-trusted-firmware-rebuild uboot-rebuild linux-rebuild; make
+```
+
+### Method 2: Loaded by remoteproc
+
+1. Normal kernel image build using Buildroot.
+```cmd
+    $ make <ma35d1_defconfig>
+    $ make
+```
+
+2. Reserved memory for AMP and selected `hwsem` to support IPI. By default, 32KB is reserved, please modify it to 34KB (0x8800). And hwsem 6 and hwsem 7 are used as `rxipi` and `txipi`, respectively.
+
+    [ma35d1.dtsi](https://github.com/OpenNuvoton/MA35D1_linux-5.10.y/blob/master/arch/arm64/boot/dts/nuvoton/ma35d1.dtsi)
+
+```dts
+    reserved-memory {
+        rpmsg_buf: rpmsg_buf@0 {
+			reg = <0x0 0x84000000 0x0 0x8800>;
+			no-map;
+		};
+    };
+
+    ampm: ampm {
+		compatible = "nuvoton,ma35d1-ampm";
+		memory-region = <&rpmsg_buf>;
+		rxipi = <&hwsem 6>;
+		txipi = <&hwsem 7>;
+		status = "okay";
+	};
+```
+
+3. Menuconfig for Kernel
+```cmd
+    $ make linux-menuconfig
+    Device Drivers --->
+        Rpmsg drivers --->
+        -*- RPMSG device interface
+        < > MA35D1 Shared Memory Driver
+        <*> MA35D1 AMP-M Driver
+        < > MA35 series AMP-A Driver
+```
+
+4. Rebuild all
+```cmd
+    $ make arm-trusted-firmware-rebuild uboot-rebuild linux-rebuild; make
+```
+
+5. Ensure that the configurations in CM4 project match the settings in the DTS.
+
+    [OpenAMPConfig.h](https://github.com/OpenNuvoton/MA35D1_RTP_BSP/blob/master/SampleCode/OpenAMP/AMP_CoreMRTOS/port/OpenAMPConfig.h)
+
+```c
+    #define SHARED_RSC_TABLE       ( 0x84000000UL )
+    #define RING_TX_SIZE           ( 0x4000 )
+    #define RING_RX_SIZE           ( 0x4000 )
+    #define SHARED_MEM_SIZE        ( RING_TX_SIZE + RING_RX_SIZE )
+
+    #define RXIPI_BASE             ( HWSEM0 )
+    #define RXIPI_IRQ_NUM          (IRQn_Type)HWSEM0_IRQn
+    #define RXIPI_CH_SEL           ( 7 )
+    #define TXIPI_BASE             ( HWSEM0 )
+    #define TXIPI_CH_SEL           ( 6 )
+```
+
+6. Prepare the image `AMP_CoreMRTOS.elf` or `AMP_CoreMRTOS.axf` and follow the commands to load it using **remoteproc**. After the CM4 image is loaded, run `amp.bin` to start the demo.
+```cmd
+    $ echo -n /path/to/AMP_CoreMRTOS > /sys/module/firmware_class/parameters/path
+    $ echo -n AMP_CoreMRTOS.elf > /sys/class/remoteproc/remoteproc0/firmware
+    $ echo start > /sys/class/remoteproc/remoteproc0/state
+    $ /path/to/amp.bin
+```
+
+## Getting started with AMP-A
 
 Image of core1, embedded in the kernel image, is loaded by core0 Linux via ARM Trusted Firmware (TFA). Please follow the steps to complete the kernel image.
 
@@ -450,56 +736,60 @@ Image of core1, embedded in the kernel image, is loaded by core0 Linux via ARM T
     $ make
 ```
 
-2. Reserved memory for AMP and selected timers for IPI support. By default, 128KB is reserved, and timer8 and timer9 are used as rxipi and txipi, respectively.
+2. Reserved memory for AMP and selected `timer` to support IPI. By default, 32KB is reserved; however it will be overriden by step 5. And timer8 and timer9 are used as `rxipi` and `txipi`, respectively.
 
     **Note: The hardware that may be used by AMP will be automatically enabled in the subsequent steps.**
 
+    [ma35xx.dtsi](https://github.com/OpenNuvoton/MA35D1_linux-5.10.y/blob/master/arch/arm64/boot/dts/nuvoton/ma35d1.dtsi)
+
 ```dts
     reserved-memory {
-        amp_buf: amp_buf@0 {
-            reg = <0x0 0x84008000 0x0 0x20000> /* 128KB for amp shared memory */
+        rpmsg_buf: rpmsg_buf@0 {
+            reg = <0x0 0x84000000 0x0 0x8000>
             no-map;
         };
     };
+
     amp: amp {
         comapaible = "nuvoton,ma35-amp";
-        memory-region = <&amp_buf>;
+        memory-region = <&rpmsg_buf>;
         rxipi = <&timer8>;
         txipi = <&timer9>;
-        status = "disabled";
+        status = "okay";
     };
 ```
 
-3. Ensure that the configurations in Core1 project match the settings in the DTS. 
+3. Ensure that the configurations in Core1 project match the settings in the DTS.
 
-    **Note: User needs to account for the size of resource table and reserve memory in the DTS that is slightly larger than the *SHARED_MEM_SIZE*. If the reserved shared memory is insufficient, AMP driver will issue a warning message. By default, 2KB is enough.**
+    [OpenAMPConfig.h](https://github.com/OpenNuvoton/MA35D1_NonOS_BSP/blob/master/SampleCode/OpenAMP/AMP_Core1RTOS/port/OpenAMPConfig.h)
 
 ```c
-    #define SHARED_RSC_TABLE       ( 0x84008000UL )
-    #define RING_TX_SIZE           ( 0x8000 )
-    #define RING_RX_SIZE           ( 0x8000 )
+    #define SHARED_RSC_TABLE       ( 0x84000000UL )
+    #define RING_TX_SIZE           ( 0x4000 )
+    #define RING_RX_SIZE           ( 0x4000 )
     #define SHARED_MEM_SIZE        ( RING_TX_SIZE + RING_RX_SIZE )
 
     #define RXIPI_BASE             ( TIMER9 )
     #define TXIPI_BASE             ( TIMER8 )
 ```
 
-4. Prepare for Core1 image and copy binary to **images** directory.
-
+4. Prepare for Core1 image and copy binary to `images` directory.
 ```cmd
     $ cp AMP_Core1RTOS.bin /path/to/buildroot/output/images
 ```
 
-5. Menuconfig for buildroot.
+5. In Buildroot's menuconfig, reserve 34 KB (0x8800) for shared memory here. User needs to account for the size of resource table and reserve memory in the DTS that is slightly larger than the `SHARED_MEM_SIZE`. If the reserved shared memory is insufficient, AMP driver will issue a warning message. By default, 2KB is enough. Another example: if user allocates 64 KB for `SHARED_MEM_SIZE`, please reserve 66 KB of shared memory.
 
     **Note: If you want to change the execution address, remember to also modify the loader in the Core1 project.**
 
 ```cmd
     $ make menuconfig
-    Bootloaders --->
-        [*] Add SCP BL2 image into FIP Image
-              Load Image into FIP Image (A35 image) --->
-        [*]   IPI support
+    Bootloaders  --->
+        [*]   Add SCP BL2 image into FIP Image
+                Load Image into FIP Image (A35 Image)  --->
+        [*]     IPI support
+        (0x84000000) Base address of shared memory for AMP
+        (0x8800) Size of shared memory for AMP
         (AMP_Core1RTOS.bin) SCP_BL2 binary file names
         (0x88000000) The execution address of CORE1
         (0x2000000) The execution size of CORE1
@@ -511,11 +801,12 @@ Image of core1, embedded in the kernel image, is loaded by core0 Linux via ARM T
     Device Drivers --->
         Rpmsg drivers --->
         -*- RPMSG device interface
-        <*> MA35 series AMP Driver
+        < > MA35D1 Shared Memory Driver
+        < > MA35D1 AMP-M Driver
+        <*> MA35 series AMP-A Driver
 ```
 
 7. Rebuild all
-
 ```cmd
     $ make arm-trusted-firmware-dirclean
     $ make arm-trusted-firmware-rebuild uboot-rebuild linux-rebuild; make
@@ -534,6 +825,120 @@ Image of core1, embedded in the kernel image, is loaded by core0 Linux via ARM T
 	};
 ```
 
+## Getting started with AMP-A + AMP-M
+
+The MA35-AMP supports running AMP-A and AMP-M simultaneously, allowing three operating systems to run at the same time. In this case, the Core1 image is loaded via TFA, while the CM4 image is loaded via **remoteproc**. Please follow the steps below to complete the configuration.
+
+1. Normal kernel image build using Buildroot.
+```cmd
+    $ make <ma35d1_defconfig>
+    $ make
+```
+
+2. Prepare reserved memory node `rpmsg_buf` for `ampm`, and node `amp_buf` for `amp`.
+
+```dts
+    reserved-memory {
+        rpmsg_buf: rpmsg_buf@0 {
+            reg = <0x0 0x84000000 0x0 0x8800>
+            no-map;
+        };
+        amp_buf: amp_buf@0 {
+			reg = <0x0 0x84008800 0x0 0x8800>;
+			no-map;
+		};
+    };
+
+    ampm: ampm {
+		compatible = "nuvoton,ma35d1-ampm";
+		memory-region = <&rpmsg_buf>;
+		rxipi = <&hwsem 6>;
+		txipi = <&hwsem 7>;
+		status = "okay";
+	};
+
+	amp: amp {
+		compatible = "nuvoton,ma35-amp";
+		memory-region = <&amp_buf>;
+		rxipi = <&timer8>;
+		txipi = <&timer9>;
+		status = "okay";
+	};
+```
+
+3. Ensure that the configurations in CM4 project match the settings in the DTS. 
+```c
+    #define SHARED_RSC_TABLE       ( 0x84000000UL )
+    #define RING_TX_SIZE           ( 0x4000 )
+    #define RING_RX_SIZE           ( 0x4000 )
+    #define SHARED_MEM_SIZE        ( RING_TX_SIZE + RING_RX_SIZE )
+
+    #define RXIPI_BASE             ( HWSEM0 )
+    #define RXIPI_IRQ_NUM          (IRQn_Type)HWSEM0_IRQn
+    #define RXIPI_CH_SEL           ( 7 )
+    #define TXIPI_BASE             ( HWSEM0 )
+    #define TXIPI_CH_SEL           ( 6 )
+```
+
+4. Ensure that the configurations in Core1 project match the settings in the DTS. 
+
+```c
+    #define SHARED_RSC_TABLE       ( 0x84008800UL )
+    #define RING_TX_SIZE           ( 0x4000 )
+    #define RING_RX_SIZE           ( 0x4000 )
+    #define SHARED_MEM_SIZE        ( RING_TX_SIZE + RING_RX_SIZE )
+
+    #define RXIPI_BASE             ( TIMER9 )
+    #define TXIPI_BASE             ( TIMER8 )
+```
+
+4. Prepare for Core1 image and copy binary to `images` directory.
+```cmd
+    $ cp AMP_Core1RTOS.bin /path/to/buildroot/output/images
+```
+
+5. In Buildroot's menuconfig, the based address and size of Core1's shared memory here are set to 0x84008800 and 0x8800, respectively.
+
+```cmd
+    $ make menuconfig
+    Bootloaders  --->
+        [*]   Add SCP BL2 image into FIP Image
+                Load Image into FIP Image (A35 Image)  --->
+        [*]     IPI support
+        (0x84008800) Base address of shared memory for AMP
+        (0x8800) Size of shared memory for AMP
+        (AMP_Core1RTOS.bin) SCP_BL2 binary file names
+        (0x88000000) The execution address of CORE1
+        (0x2000000) The execution size of CORE1
+```
+
+6. Menuconfig for Kernel
+```cmd
+    $ make linux-menuconfig
+    Device Drivers --->
+        Rpmsg drivers --->
+        -*- RPMSG device interface
+        < > MA35D1 Shared Memory Driver
+        <*> MA35D1 AMP-M Driver
+        <*> MA35 series AMP-A Driver
+```
+
+7. Rebuild all
+```cmd
+    $ make arm-trusted-firmware-dirclean
+    $ make arm-trusted-firmware-rebuild uboot-rebuild linux-rebuild; make
+```
+
+8. Prepare Linux [applications](https://github.com/OpenNuvoton/MA35D1_Linux_Applications/tree/master/examples/amp) for AMP-M and AMP-A. Users can select device ID using `RPMSG_CTRL_DEV_ID`. By default, the device `rpmsg_ctrl0` is assigned to **AMP-M**, and `rpmsg_ctrl1` is assigned to **AMP-A**.
+
+9. Prepare the image `AMP_CoreMRTOS.elf` or `AMP_CoreMRTOS.axf` and follow the commands to load it using **remoteproc**. Then, run the respective `amp.bin` files for AMP-M and AMP-A to start the demo.
+```cmd
+    $ echo -n /path/to/AMP_CoreMRTOS > /sys/module/firmware_class/parameters/path
+    $ echo -n AMP_CoreMRTOS.elf > /sys/class/remoteproc/remoteproc0/firmware
+    $ echo start > /sys/class/remoteproc/remoteproc0/state
+```
+
 ## Version
 
-MA35 series AMP version 1.0
+- AMPM : Version 1.0
+- AMPA : Version 1.0

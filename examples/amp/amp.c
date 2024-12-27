@@ -3,11 +3,11 @@
  * All rights reserved.
  *
  * This project demonstrates AMP between dual cores of A35,
- * with core0 running Linux and core1 running FreeRTOS.
+ * with Core0 running Linux and Core1/CM4 running FreeRTOS.
  * Fill in your endpoints in "eptinst[]" to complete the design.
  * Please ensure that RPMSG_CTRL_DEV_ID matches the device ID.
  *
- * Core0 (this core)     Core1
+ * Core0 (this core)     Core1 or CM4
  *   A (Tx & Rx)  <----->  B (High freq. short packet)
  *   C (Tx & Rx)  <----->  D (Low freq. long packet)
  *   E (Tx & Rx)  <----->  F (CRC test)
