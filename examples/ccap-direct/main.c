@@ -27,6 +27,30 @@
 #define IMAGE_WIDTH		640
 #define IMAGE_HEIGHT		480
 
+/*
+ *  For snapshot demo, overlay is used.
+ *  Please modify the diaply and ccap0 nodes of device tree.
+ *
+ *  display: display@40260000 {
+ *      ...
+ *      buffer-num = <3>;
+ *      colorkey-en = <0>;
+ *      overlay-en = <1>;
+ *      overlay-pixel-fmt = <4>;
+ *      overlay-width = <640>;
+ *      overlay-height = <480>;
+ *      overlay-rect-tlx = <384>;
+ *      overlay-rect-tly = <120>;
+ *      ...
+ *  }
+ *
+ *  &ccap0 {
+ *      ...
+ *              nuvoton,mmap = <1228800>;
+ *      ...
+ *  };
+ */
+
 #define DO_SNAPSHOT_DEMO	1
 
 #define IOCTL_CCAP_FBD_SET		_IOW('v', 61, struct ccap_fb_direct)
@@ -52,9 +76,21 @@ struct overlay {
 	__u8 *memp;
 } _overlay;
 
+
+#define ULTRAFBIO_BUFFER_SIZE	0x46A7
+
+struct overlay_info {
+	unsigned int width;
+	unsigned int height;
+	unsigned int stride;
+	unsigned int format;
+};
+
 int init_overlay(void)
 {
 	struct fb_fix_screeninfo finfo;
+	struct fb_var_screeninfo vinfo;
+	struct overlay_info oinfo;
 	__u8 *fb_mem, *image;
 	int fd;
 
@@ -80,6 +116,29 @@ int init_overlay(void)
 	memset(_overlay.memp, 0, finfo.smem_len);
 
 	_overlay.fd = fd;
+
+	oinfo.width = IMAGE_WIDTH;
+	oinfo.height = IMAGE_HEIGHT;
+	oinfo.stride = IMAGE_WIDTH * 2;
+	oinfo.format = 4;
+
+	if (ioctl(fd, ULTRAFBIO_BUFFER_SIZE, &oinfo)) {
+		perror("Overlay ULTRAFBIO_BUFFER_SIZE failed!\n");
+		close(fd);
+		return -1;
+	}
+
+	if (ioctl(fd, FBIOGET_VSCREENINFO, &vinfo)) {
+		perror("Overlay FBIOGET_VSCREENINFO failed!\n");
+		close(fd);
+		return -1;
+	}
+
+	if (ioctl(fd, FBIOPUT_VSCREENINFO, &vinfo)) {
+		perror("Overlay FBIOPUT_VSCREENINFO failed!\n");
+		close(fd);
+		return -1;
+	}
 	return 0;
 }
 
@@ -94,6 +153,21 @@ int do_sanp_shot(int fd)
 			return -1;
 	} while (ioctl(fd, IOCTL_CCAP_SNAPSHOT_IDLE, &x) != 0);
 	return 0;
+}
+
+void write_and_show_image(__u8 *image)
+{
+	FILE *fp;
+
+	/* Write the snapshot image to a file */
+	fp = fopen("/tmp/snapshot.raw", "wb");
+	fwrite(image, IMAGE_WIDTH * IMAGE_HEIGHT * 2, 1, fp);
+	fclose(fp);
+
+	/* Read the image from file and draw to display overlay */
+	fp = fopen("/tmp/snapshot.raw", "rb");
+	fread(_overlay.memp, IMAGE_WIDTH * IMAGE_HEIGHT * 2, 1, fp);
+	fclose(fp);
 }
 
 void ccap_control(void)
@@ -178,8 +252,9 @@ void ccap_control(void)
 
 		while (1) {
 			sleep(1);
+
 			if (do_sanp_shot(fd) == 0)
-				memcpy(_overlay.memp, image, IMAGE_WIDTH * IMAGE_HEIGHT * 4);
+				write_and_show_image(image);
 			else
 				printf("Failed to catpure images!\n");
 		}
