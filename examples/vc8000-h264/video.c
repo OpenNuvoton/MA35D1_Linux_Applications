@@ -250,11 +250,7 @@ int video_stop(struct instance *i)
 
 	memzero(dec);
 	dec.cmd = V4L2_DEC_CMD_STOP;
-	ret = ioctl(vid->fd, VIDIOC_DECODER_CMD, &dec);
-	if (ret < 0) {
-		err("DECODER_CMD failed (%s)", strerror(errno));
-		return -1;
-	}
+	ioctl(vid->fd, VIDIOC_DECODER_CMD, &dec);
 
 	/* HACK: streamoff failing, so bail out of here */
 	return 0;

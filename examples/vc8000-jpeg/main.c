@@ -29,11 +29,7 @@
 
 #include "dcfb.h"
 
-#define DO_PERFORMANCE_TEST
-
-//#define DIR_MODE
-
-#define DISPLAY_HOLD_TIME	1     // seconds
+//#define DO_PERFORMANCE_TEST
 
 #define JPEG_FILE_SIZE_MAX      0x780000
 
@@ -96,7 +92,7 @@ dc_frame_info UserFrameBufferSize = {
 
 static struct fb_var_screeninfo FBVar;
 
-static int  decode_jpeg_file(int fd);
+static int  decode_jpeg_file(int fd, int bytes_read);
 
 static int read_jpeg_file(char *file_name, unsigned char *buff, unsigned int *bytes_read)
 {
@@ -164,13 +160,6 @@ int fb_open(char *name)
 		return -1;
 	}
 
-	ret = ioctl(fd, ULTRAFBIO_BUFFER_SIZE, &UserFrameBufferSize);
-	if (ret < 0) {
-		printf("ULTRAFBIO_BUFFER_SIZE set buffer size error\n");
-		close(fd);
-		return -1;
-	}
-
 	ret = ioctl(fd, FBIOPUT_VSCREENINFO, &FBVar);
 	if (ret != 0) {
 		printf("FBIOPUT_VSCREENINFO failed!\n");
@@ -190,8 +179,6 @@ int main(int argc, char **argv)
 	int                         fb_fd;
 	char                        *dev_name = "/dev/video0";
 	char                        *fb_name = "/dev/fb0";
-	DIR                         *dir;
-	struct dirent               *dirEntry;
 	unsigned int                bytes_read;
 	char                        dir_name[256];
 	char                        file_name[256];
@@ -200,16 +187,7 @@ int main(int argc, char **argv)
 	int c;
 	struct vc8k_pp_params       pp;
 
-#ifdef DIR_MODE
-	strcpy(dir_name, argv[1]);
-	dir = opendir(dir_name);
-	if (dir == NULL) {
-		printf("Cannot open directory: %s\n", argv[1]);
-		exit(-1);
-	}
-#else
 	strcpy(file_name, argv[1]);
-#endif
 	fb_fd = fb_open(fb_name);
 	if (fb_fd < 0) {
 		printf("Cannot open %s\n", fb_name);
@@ -232,8 +210,8 @@ int main(int argc, char **argv)
 	pp.frame_buf_h = FBVar.yres;
 	pp.img_out_x = 0;
 	pp.img_out_y = 0;
-	pp.img_out_w = 640; //pp.frame_buf_w;
-	pp.img_out_h = 480; //pp.frame_buf_h;
+	pp.img_out_w = pp.frame_buf_w;
+	pp.img_out_h = pp.frame_buf_h;
 	pp.rotation  = PP_ROTATION_NONE;
 	pp.img_out_fmt = V4L2_PIX_FMT_ARGB32;   /* or V4L2_PIX_FMT_RGB565, V4L2_PIX_FMT_NV12 */
 
@@ -356,51 +334,25 @@ int main(int argc, char **argv)
 	/*  Read JPEG files and decode                         */
 	/*-----------------------------------------------------*/
 
-#if 1  // file
 	printf("\n\nDecode JPEG file: %s\n", file_name);
 	if (read_jpeg_file(file_name, buffers_out.start , &bytes_read) == 0) {
-		gettimeofday(&t0, NULL);
-		decode_jpeg_file(fd);
-		gettimeofday(&t1, NULL);
-		i = (t1.tv_sec - t0.tv_sec) * 1000000 + t1.tv_usec - t0.tv_usec;
-		printf("Decode time spend %ds, %dus\n", i/1000000, i % 1000000);
-	}
-#else	
-	while ((dirEntry = readdir(dir)) != NULL) {
-		if ((strcmp(dirEntry->d_name + strlen(dirEntry->d_name) - 4, ".jpg") != 0) &&
-		    (strcmp(dirEntry->d_name + strlen(dirEntry->d_name) - 4, ".JPG") != 0))
-			continue;
-		
-		strcpy(file_name, dir_name);
-		strcat(file_name, "/");
-		strcat(file_name, dirEntry->d_name);
-
-		printf("\n\nDecode JPEG file: %s\n", file_name);
-		if (read_jpeg_file(file_name, buffers_out.start , &bytes_read) != 0)
-			continue;
-
 #ifdef DO_PERFORMANCE_TEST			
 		gettimeofday(&t0, NULL);
 		for (i = 0; i < 100; i++)
-			decode_jpeg_file(fd);
+			decode_jpeg_file(fd, bytes_read);
 		gettimeofday(&t1, NULL);
 		i = (t1.tv_sec - t0.tv_sec) * 1000000 + t1.tv_usec - t0.tv_usec;
 		printf("Decode 100 times spend %ds, %dus\n", i/1000000, i % 1000000);
 		printf("JPEG decode time: %d us\n", i/100);
 #else
 		gettimeofday(&t0, NULL);
-		decode_jpeg_file(fd);
+		decode_jpeg_file(fd, bytes_read);
 		gettimeofday(&t1, NULL);
 		i = (t1.tv_sec - t0.tv_sec) * 1000000 + t1.tv_usec - t0.tv_usec;
 		printf("Decode time spend %ds, %dus\n", i/1000000, i % 1000000);
 #endif		
-		sleep(DISPLAY_HOLD_TIME);
 	}
 	
-	printf("\nNo more JPEG files.\n");
-
-	closedir(dir);
-#endif  // dir
 	munmap(buffers_out.start, buffers_out.length);
 	munmap(buffers_cap.start, buffers_cap.length);
 
@@ -412,15 +364,14 @@ int main(int argc, char **argv)
 
 	close(fd);
 	close(fb_fd);
-        return 0;
+	return 0;
 }
-
 
 /*
  *  fd:  video device file descriptor id
  *  file_name:  JPEG file name
  */
-static int  decode_jpeg_file(int fd)
+static int  decode_jpeg_file(int fd, int bytes_read)
 {
 	struct v4l2_buffer cap_buf, out_buf;
 	enum v4l2_buf_type type;
@@ -437,7 +388,7 @@ static int  decode_jpeg_file(int fd)
 	cap_buf.index = 0;
 	cap_buf.length = CAP_PLANES;
 	cap_buf.m.planes = planes_cap;
-	cap_buf.m.planes[0].bytesused = 0;
+	cap_buf.m.planes[0].bytesused = bytes_read;
 	cap_buf.m.planes[0].data_offset = 0;
 	xioctl(fd, "VIDIOC_QBUF", VIDIOC_QBUF, &cap_buf);
 

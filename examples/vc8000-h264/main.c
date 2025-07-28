@@ -352,12 +352,6 @@ int fb_open(struct instance *i, char *name)
 		return -1;
 	}
 
-	ret = ioctl(i->fb.fd, ULTRAFBIO_BUFFER_SIZE, &UserFrameBufferSize);
-	if (ret < 0) {
-		printf("ULTRAFBIO_BUFFER_SIZE set buffer size error\n");
-		return -1;
-	}
-
 	ret = ioctl(i->fb.fd, FBIOPUT_VSCREENINFO, &FBVar);
 	if (ret != 0) {
 		printf("FBIOPUT_VSCREENINFO failed!\n");
