@@ -183,6 +183,16 @@ static int rpmsg_create_ept(int rpfd, struct rpmsg_endpoint_info *eptinfo)
 	return ret;
 }
 
+static int rpmsg_destroy_ept(int rpfd)
+{
+	int ret;
+
+	ret = ioctl(rpfd, RPMSG_DESTROY_EPT_IOCTL);
+	if (ret)
+		perror("Failed to destroy endpoint.\n");
+	return ret;
+}
+
 void sig_handler(int signo)
 {
 	int ret;
@@ -196,6 +206,7 @@ void sig_handler(int signo)
 			printf("\n Failed to write#1 \n");
 			while(1);
 		}
+		rpmsg_destroy_ept(fd[1]);
 		sysprintf("\nSIGINT signal catched!\n");
 	}
 }
