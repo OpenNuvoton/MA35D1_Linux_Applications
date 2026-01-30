@@ -76,7 +76,7 @@ int OpenDevice(void)
 {
     int i= 0;
     int fd, LastFd;
-    char FbDevName[10];
+    char FbDevName[64];
 
     sprintf(FbDevName, "/dev/fb%d", i);
     fd = open(FbDevName, O_RDWR);

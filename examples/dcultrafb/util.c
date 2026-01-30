@@ -46,6 +46,8 @@
 #define KERNELSTATES \
     (ALIGN(KERNELTABLESIZE + 4, 8))
 
+void calculate_gamma_table(dc_gamma_table *gammatable);
+
 void dump_vscreeninfo(struct fb_var_screeninfo *fvsi)
 {
 	printf("======= FB VAR SCREENINFO =======\n");

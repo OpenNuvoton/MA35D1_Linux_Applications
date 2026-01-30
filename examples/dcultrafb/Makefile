@@ -6,10 +6,10 @@ STRIP := aarch64-linux-gnu-strip
 TARGET = fb-alphablending_demo
 SRCS := fb_alphablending.c util.c
 
-LIBS= -lc -lgcc -lc
+LIBS= -lm
 
 all:
-	$(CC) -static $(SRCS) -o $(TARGET)
+	$(CC) -static $(SRCS) -o $(TARGET) $(LIBS)
 	$(STRIP) $(TARGET)
 
 clean:
