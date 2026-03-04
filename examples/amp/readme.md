@@ -252,10 +252,29 @@ Please note that the base address `rpmsg_buf` matches `SHARED_RSC_TABLE` and is 
     #define TXIPI_IRQ_NUM          (IRQn_ID_t)TMR8_IRQn
 ```
 
+3. (Optional) Core0 FreeRTOS settings:
+[OpenAMPConfig.h](https://github.com/OpenNuvoton/MA35D1_NonOS_BSP/blob/master/SampleCode/OpenAMP/AMP_Core0RTOS/port/OpenAMPConfig.h)
+
+For scenarios where Core0 runs FreeRTOS instead of Linux, the following parameters should be configured. The base address and shared memory sizes should match the Core1 settings, but the IPI hardware assignment is reversed (Core0's RXIPI corresponds to Core1's TXIPI and vice versa).
+
+```c
+    #define SHARED_RSC_TABLE       ( 0x84000000UL )
+    #define RING_TX_SIZE           ( 0x4000 )
+    #define RING_RX_SIZE           ( 0x4000 )
+    #define NO_NAME_SERVICE        ( 32 ) /* Number of char supported by ns (must be aligned with word) */
+
+    #define RXIPI_BASE             ( TIMER8 )
+    #define RXIPI_IRQ_NUM          (IRQn_ID_t)TMR8_IRQn
+    #define TXIPI_BASE             ( TIMER9 )
+    #define TXIPI_IRQ_NUM          (IRQn_ID_t)TMR9_IRQn
+```
+
+**Note**: When using Core0 FreeRTOS, the resource table is defined on Core0 side, and Core1 acts as the remote processor. The IPI configuration is swapped compared to the Linux + FreeRTOS setup.
+
 ---
 
 # Applications
-Nuvoton provides sample code demonstrating inter-processor communication in the MA35-AMP architecture, with Core0 running Linux and either Core1 or CM4 running FreeRTOS, showcasing communication between the dual-core A35 or between the A35 and CM4.
+Nuvoton provides sample code demonstrating inter-processor communication in the MA35-AMP architecture, with Core0 running **Linux or FreeRTOS** and either Core1 or CM4 running FreeRTOS, showcasing communication between the dual-core A35 or between the A35 and CM4.
 
 The AMP architecture is based on RPMSG, which uses unified arguments for creating endpoints. The arguments for tx and rx are explained in the comments. Please do **not** modify this structure, even if you change `NO_NAME_SERVICE`, otherwise it will not be accepted by driver.
 
@@ -273,6 +292,8 @@ The sample code provides a command interface to help users quickly understand th
 ## Linux application
 
 This [sample code](https://github.com/OpenNuvoton/MA35D1_Linux_Applications/blob/master/examples/amp/amp.c) uses pthread to demonstrates 3 tasks and 6 endpoints: The 1st task handles high-frequency short packet data exchange, the 2nd task manages low-frequency long packet data exchange, and the 3rd task demonstrates packet CRC verification.
+
+**Note**: For scenarios where Core0 runs FreeRTOS instead of Linux, refer to [AMP_Core0RTOS](https://github.com/OpenNuvoton/MA35D1_NonOS_BSP/tree/master/SampleCode/OpenAMP/AMP_Core0RTOS), which mirrors this Linux application functionality. The FreeRTOS implementation uses the same RPMSG APIs described in the [FreeRTOS application](#freertos-application) section below.
 
 
 1. Flow
@@ -824,6 +845,50 @@ Image of core1, embedded in the kernel image, is loaded by core0 Linux via ARM T
                      <UART16_TZNS>,
 	};
 ```
+
+## (Optional) Getting started with AMP-A Dual FreeRTOS
+
+For scenarios where both Core0 and Core1 run FreeRTOS (without Linux), follow these steps to configure the dual-core RTOS environment. This setup loads Core0 FreeRTOS image at **0x80400000** and Core1 FreeRTOS image at **0x88000000**.
+
+1. Ensure that the configurations in Core0 project match the shared memory settings.
+
+    [OpenAMPConfig.h](https://github.com/OpenNuvoton/MA35D1_NonOS_BSP/blob/master/SampleCode/OpenAMP/AMP_Core0RTOS/port/OpenAMPConfig.h)
+
+```c
+    #define SHARED_RSC_TABLE       ( 0x84000000UL )
+    #define RING_TX_SIZE           ( 0x4000 )
+    #define RING_RX_SIZE           ( 0x4000 )
+    #define NO_NAME_SERVICE        ( 32 ) /* Number of char supported by ns (must be aligned with word) */
+
+    #define RXIPI_BASE             ( TIMER8 )
+    #define RXIPI_IRQ_NUM          (IRQn_ID_t)TMR8_IRQn
+    #define TXIPI_BASE             ( TIMER9 )
+    #define TXIPI_IRQ_NUM          (IRQn_ID_t)TMR9_IRQn
+```
+
+2. Ensure that the configurations in Core1 project match the shared memory settings.
+
+    [OpenAMPConfig.h](https://github.com/OpenNuvoton/MA35D1_NonOS_BSP/blob/master/SampleCode/OpenAMP/AMP_Core1RTOS/port/OpenAMPConfig.h)
+
+```c
+    #define SHARED_RSC_TABLE       ( 0x84000000UL )
+    #define RING_TX_SIZE           ( 0x4000 )
+    #define RING_RX_SIZE           ( 0x4000 )
+    #define NO_NAME_SERVICE        ( 32 ) /* Number of char supported by ns (must be aligned with word) */
+
+    #define RXIPI_BASE             ( TIMER9 )
+    #define RXIPI_IRQ_NUM          (IRQn_ID_t)TMR9_IRQn
+    #define TXIPI_BASE             ( TIMER8 )
+    #define TXIPI_IRQ_NUM          (IRQn_ID_t)TMR8_IRQn
+```
+
+3. Load the images:
+   - **Core1 Image**: Load `AMP_Core1RTOS.bin` at address **0x88000000**
+   - **Core0 Image**: Load `AMP_Core0RTOS.bin` at address **0x80400000** and execute
+
+**Note**: In this dual-FreeRTOS configuration:
+- IPI hardware (TIMER8/TIMER9) assignments are swapped between Core0 and Core1
+- Both cores must use the same `SHARED_RSC_TABLE` base address and shared memory sizes
 
 ## Getting started with AMP-A + AMP-M
 
