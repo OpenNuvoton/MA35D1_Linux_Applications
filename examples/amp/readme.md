@@ -162,7 +162,7 @@ Here are the configurations for using AMP-M in Buildroot menuconfig. By default,
                 Load Image into FIP Image (RTP M4 Image)  --->
         [*]     IPI support
         (0x84000000) Base address of shared memory for AMP
-        (0x8800) Size of shared memory for AMP
+        (0x9000) Size of shared memory for AMP
         (RTP-BSP/AMP_CoreMRTOS.bin) SCP_BL2 binary file names
 ```
 
@@ -170,7 +170,7 @@ After the build process, the memory region `rpmsg_buf` will be set to the range 
 ```dts
     reserved-memory {
         rpmsg_buf: rpmsg_buf@0 {
-			reg = <0x0 0x84000000 0x0 0x8800>;
+			reg = <0x0 0x84000000 0x0 0x9000>;
 			no-map;
 		};
     };
@@ -213,7 +213,7 @@ Here are the configurations for using AMP-A in Buildroot menuconfig. By default,
                 Load Image into FIP Image (A35 Image)  --->
         [*]     IPI support
         (0x84000000) Base address of shared memory for AMP
-        (0x8800) Size of shared memory for AMP
+        (0x9000) Size of shared memory for AMP
         (AMP_Core1RTOS.bin) SCP_BL2 binary file names
         (0x88000000) The execution address of CORE1
         (0x2000000) The execution size of CORE1
@@ -223,7 +223,7 @@ After the build process, the memory region `rpmsg_buf` will be set to the range 
 ```dts
     reserved-memory {
         rpmsg_buf: rpmsg_buf@0 {
-            reg = <0x0 0x84000000 0x0 0x8800>
+            reg = <0x0 0x84000000 0x0 0x9000>
             no-map;
         };
     };
@@ -648,7 +648,7 @@ The CM4 image supports two loading methods: it can be embedded within the kernel
     $ cp AMP_CoreMRTOS.bin /path/to/buildroot/output/images/RTP-BSP
 ```
 
-5. In Buildroot's menuconfig, reserve 34 KB (0x8800) for shared memory here. User needs to account for the size of resource table and reserve memory in the DTS that is slightly larger than the `SHARED_MEM_SIZE`. If the reserved shared memory is insufficient, AMP driver will issue a warning message. By default, 2KB is enough. Another example: if user allocates 64 KB for `SHARED_MEM_SIZE`, please reserve 66 KB of shared memory.
+5. In Buildroot's menuconfig, reserve 36 KB (0x9000) for shared memory here. User needs to account for the size of resource table and reserve memory in the DTS that is slightly larger than the `SHARED_MEM_SIZE`. If the reserved shared memory is insufficient, AMP driver will issue a warning message. By default, 4KB is enough (page-aligned). Another example: if user allocates 64 KB for `SHARED_MEM_SIZE`, please reserve 68 KB of shared memory.
 ```cmd
     $ make menuconfig
     Bootloaders  --->
@@ -656,7 +656,7 @@ The CM4 image supports two loading methods: it can be embedded within the kernel
                 Load Image into FIP Image (RTP M4 Image)  --->
         [*]     IPI support
         (0x84000000) Base address of shared memory for AMP
-        (0x8800) Size of shared memory for AMP
+        (0x9000) Size of shared memory for AMP
         (RTP-BSP/AMP_CoreMRTOS.bin) SCP_BL2 binary file names
 ```
 
@@ -685,14 +685,14 @@ The CM4 image supports two loading methods: it can be embedded within the kernel
     $ make
 ```
 
-2. Reserved memory for AMP and selected `hwsem` to support IPI. By default, 32KB is reserved, please modify it to 34KB (0x8800). And hwsem 6 and hwsem 7 are used as `rxipi` and `txipi`, respectively.
+2. Reserved memory for AMP and selected `hwsem` to support IPI. By default, 32KB is reserved, please modify it to 36KB (0x9000). And hwsem 6 and hwsem 7 are used as `rxipi` and `txipi`, respectively.
 
     [ma35d1.dtsi](https://github.com/OpenNuvoton/MA35D1_linux-5.10.y/blob/master/arch/arm64/boot/dts/nuvoton/ma35d1.dtsi)
 
 ```dts
     reserved-memory {
         rpmsg_buf: rpmsg_buf@0 {
-			reg = <0x0 0x84000000 0x0 0x8800>;
+			reg = <0x0 0x84000000 0x0 0x9000>;
 			no-map;
 		};
     };
@@ -799,7 +799,7 @@ Image of core1, embedded in the kernel image, is loaded by core0 Linux via ARM T
     $ cp AMP_Core1RTOS.bin /path/to/buildroot/output/images
 ```
 
-5. In Buildroot's menuconfig, reserve 34 KB (0x8800) for shared memory here. User needs to account for the size of resource table and reserve memory in the DTS that is slightly larger than the `SHARED_MEM_SIZE`. If the reserved shared memory is insufficient, AMP driver will issue a warning message. By default, 2KB is enough. Another example: if user allocates 64 KB for `SHARED_MEM_SIZE`, please reserve 66 KB of shared memory.
+5. In Buildroot's menuconfig, reserve 36 KB (0x9000) for shared memory here. User needs to account for the size of resource table and reserve memory in the DTS that is slightly larger than the `SHARED_MEM_SIZE`. If the reserved shared memory is insufficient, AMP driver will issue a warning message. By default, 4KB is enough (page-aligned). Another example: if user allocates 64 KB for `SHARED_MEM_SIZE`, please reserve 68 KB of shared memory.
 
     **Note: If you want to change the execution address, remember to also modify the loader in the Core1 project.**
 
@@ -810,7 +810,7 @@ Image of core1, embedded in the kernel image, is loaded by core0 Linux via ARM T
                 Load Image into FIP Image (A35 Image)  --->
         [*]     IPI support
         (0x84000000) Base address of shared memory for AMP
-        (0x8800) Size of shared memory for AMP
+        (0x9000) Size of shared memory for AMP
         (AMP_Core1RTOS.bin) SCP_BL2 binary file names
         (0x88000000) The execution address of CORE1
         (0x2000000) The execution size of CORE1
