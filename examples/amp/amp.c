@@ -35,6 +35,7 @@
 #include <sched.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <dirent.h>
 #include <linux/ioctl.h>
 #include <termios.h>
 #include <zlib.h>
@@ -97,34 +98,81 @@ struct amp_endpoint eptinst[] = {
 };
 
 /**
+ * @brief Scan /dev for the highest rpmsgN device number present.
+ *
+ * Returns the highest N found, or -1 if none exist yet.
+ * Only matches entries whose name is exactly "rpmsg" followed by digits
+ * (i.e. endpoint devices, not "rpmsg_ctrl0").
+ */
+static int rpmsg_max_id(void)
+{
+	DIR *dir = opendir("/dev");
+	struct dirent *ent;
+	int max = -1, n;
+
+	if (!dir)
+		return -1;
+
+	while ((ent = readdir(dir)) != NULL) {
+		/* Must start with "rpmsg" and next char must be a digit */
+		if (strncmp(ent->d_name, "rpmsg", 5) != 0)
+			continue;
+		if (ent->d_name[5] < '0' || ent->d_name[5] > '9')
+			continue;
+		n = atoi(ent->d_name + 5);
+		if (n > max)
+			max = n;
+	}
+
+	closedir(dir);
+	return max;
+}
+
+/**
  * @brief Create endpoint
- * 
- * @param fd file desc of AMP (rpmsg_ctrl)
- * @param amp_ept pointer to an inst of amp_endpoint
- * @return int 
+ *
+ * Snapshots the highest existing /dev/rpmsgN before calling ioctl, then
+ * expects the kernel to have created /dev/rpmsg(N+1) afterwards.
+ * This works because the kernel IDA allocates numbers monotonically and
+ * endpoints are created sequentially by this process.
+ *
+ * @param fd   file descriptor of the rpmsg_ctrl device
+ * @param amp_ept  pointer to an amp_endpoint instance
+ * @return int device id on success, negative on error
  */
 int amp_create_ept(int *fd, struct amp_endpoint *amp_ept)
 {
-	int id;
-    char devname[32];
+	char devname[32];
+	int before, after, id, ret;
 
-	id = ioctl(fd[0], RPMSG_CREATE_EPT_IOCTL, &amp_ept->eptinfo);
-	if (id < 0) {
+	before = rpmsg_max_id();
+
+	ret = ioctl(fd[0], RPMSG_CREATE_EPT_IOCTL, &amp_ept->eptinfo);
+	if (ret < 0) {
 		printf("Failed to create endpoint \"%s\".\n", amp_ept->eptinfo.name);
-	} else {
-		printf("rpmsg%d: %s endpoint \"%s\" is created.\n", id,
-				(amp_ept->eptinfo.type == EPT_TYPE_TX) ? "Tx" : "Rx",
-				amp_ept->eptinfo.name);
-
-		snprintf(devname, sizeof(devname), "/dev/rpmsg%d", id);
-		amp_ept->fd = open(devname, O_RDWR | O_NONBLOCK);
-
-		if (amp_ept->fd < 0) {
-			printf("Failed to open device %s.\n", devname);
-		} else {
-			printf("%s: device is opened.\n", devname);
-		}
+		return ret;
 	}
+
+	after = rpmsg_max_id();
+	if (after <= before) {
+		printf("No new rpmsg device found after creating endpoint \"%s\".\n",
+		       amp_ept->eptinfo.name);
+		return -ENODEV;
+	}
+
+	id = after; /* the newly created device is /dev/rpmsg<after> */
+	snprintf(devname, sizeof(devname), "/dev/rpmsg%d", id);
+
+	printf("rpmsg%d: %s endpoint \"%s\" is created.\n", id,
+	       (amp_ept->eptinfo.type == EPT_TYPE_TX) ? "Tx" : "Rx",
+	       amp_ept->eptinfo.name);
+
+	amp_ept->fd = open(devname, O_RDWR | O_NONBLOCK);
+	if (amp_ept->fd < 0) {
+		printf("Failed to open device %s.\n", devname);
+		return -errno;
+	}
+	printf("%s: device is opened.\n", devname);
 
 	return id;
 }
