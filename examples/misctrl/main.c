@@ -35,13 +35,43 @@
 #define GET_BL2_OFFSET		0x1501
 #define GET_REGISTER		0x1511
 
+static int print_junction_temperature(int fd)
+{
+	char temp[16];
+	char *end;
+	long temp_mc;
+	long temp_abs;
+	ssize_t len;
+
+	if (lseek(fd, 0, SEEK_SET) < 0) {
+		perror("Failed to seek thermal temperature");
+		return -1;
+	}
+
+	len = read(fd, temp, sizeof(temp) - 1);
+	if (len < 0) {
+		perror("Failed to read thermal temperature");
+		return -1;
+	}
+	temp[len] = '\0';
+
+	errno = 0;
+	temp_mc = strtol(temp, &end, 10);
+	if (errno || end == temp) {
+		fprintf(stderr, "Invalid thermal temperature: %s\n", temp);
+		return -1;
+	}
+
+	temp_abs = labs(temp_mc);
+	printf("Junction temperature = %s%ld.%03ld degrees Celsius\n",
+	       temp_mc < 0 ? "-" : "", temp_abs / 1000, temp_abs % 1000);
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	unsigned int i, reg_addr, val;
 	int fd_misctrl, fd_temp;
-	char temp[16];
-	int rev;
-	int j_temp;
 
 	printf("******************************************************\n");
 	printf("*  Nuvoton MA35 Series SoC misctrl demo.             *\n");
@@ -85,11 +115,7 @@ int main(int argc, char **argv)
 	for (i = 0; i < 30; i++) {
 		sleep(10);
 
-		memset(temp, 0, sizeof(temp));
-		lseek(fd_temp, 0, 0);
-		rev = read(fd_temp, temp, 6);
-		j_temp = atoi(temp);
-		printf("Junction temperature = %d\n", j_temp);
+		print_junction_temperature(fd_temp);
 	}
 
 	printf("+----------------------------------------+\n");
@@ -99,11 +125,7 @@ int main(int argc, char **argv)
 	for (i = 0; i < 30; i++) {
 		sleep(10);
 
-		memset(temp, 0, sizeof(temp));
-		lseek(fd_temp, 0, 0);
-		rev = read(fd_temp, temp, 6);
-		j_temp = atoi(temp);
-		printf("Junction temperature = %d\n", j_temp);
+		print_junction_temperature(fd_temp);
 	}
 
 	printf("+----------------------------------------+\n");
