@@ -1,0 +1,13 @@
+--- a/drivers/dma/ma35h0-dma.c
++++ b/drivers/dma/ma35h0-dma.c
+@@ -423,6 +423,10 @@
+ 	unsigned int i, sg_len;
+ 	size_t offset = 0;
+ 
++	/* Each descriptor covers one whole period; prevent sg[] overrun. */
++	if (!period_len || !buf_len || buf_len % period_len)
++		return NULL;
++
+ 	if (period_len > PDMA_MAX_CHAN_BYTES) {
+ 		dev_warn(chan2dev(chan), "too big period length %zu\n",
+ 			 period_len);

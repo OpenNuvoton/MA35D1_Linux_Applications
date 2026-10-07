@@ -1,0 +1,3 @@
+native-media/vendor/* linguist-vendored
+# Preserve whitespace that belongs to unified-diff context lines.
+native-media/patches/*.patch -whitespace
