@@ -1,0 +1,17 @@
+[Unit]
+Description=Muse board-native media API and renderer
+After=network.target
+
+[Service]
+ExecStart=/opt/muse-media/muse-media
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+UMask=0077
+LimitCORE=0
+MemoryMax=38M
+TasksMax=48
+OOMScoreAdjust=500
+
+[Install]
+WantedBy=multi-user.target
