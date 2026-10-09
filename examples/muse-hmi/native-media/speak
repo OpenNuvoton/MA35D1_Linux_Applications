@@ -1,0 +1,37 @@
+#!/bin/sh
+# Board-only speech. Models and generated audio remain on SD.
+set -eu
+set -o pipefail
+root=/mnt/sd/muse/tts
+export LD_LIBRARY_PATH=/mnt/sd/muse/lib:$root/piper
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+status=${MUSE_TTS_STATUS_FILE:-}
+if [ -n "$status" ]; then echo preparing > "$status"; fi
+engine=${MUSE_TTS_ENGINE:-piper}
+if [ "$engine" = espeak ]; then
+ "$root/piper/espeak-ng" --path="$root/piper" -v en-us -s 170 -g 0 --stdin --stdout | {
+  dd bs=256 count=1 2>/dev/null
+  if [ -n "$status" ]; then echo playing > "$status"; fi
+  cat
+ } | /usr/bin/aplay -q -D plughw:0,0 -t wav
+elif [ "$engine" = kokoro ]; then
+ export LD_LIBRARY_PATH=/mnt/sd/muse/lib:$root/sherpa-onnx-v1.13.8-linux-aarch64-shared-cpu/lib
+ model=$root/kokoro-int8-multi-lang-v1_1
+ text=$(cat)
+ "$root/sherpa-onnx-v1.13.8-linux-aarch64-shared-cpu/bin/sherpa-onnx-offline-tts" --num-threads=1 --kokoro-model="$model/model.int8.onnx" --kokoro-voices="$model/voices.bin" --kokoro-tokens="$model/tokens.txt" --kokoro-data-dir="$model/espeak-ng-data" --kokoro-lexicon="$model/lexicon-us-en.txt" --sid=0 --output-filename="$root/reply.wav" "$text"
+ if [ -n "$status" ]; then echo playing > "$status"; fi
+ /usr/bin/aplay -q -D plughw:0,0 "$root/reply.wav"
+else
+ model=${MUSE_PIPER_MODEL:-en_US-lessac-low}
+ rate=$(sed -n 's/.*"sample_rate"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$root/models/$model.onnx.json")
+ rate=${rate:-16000}
+ "$root/piper/piper" --model "$root/models/$model.onnx" --espeak_data "$root/piper/espeak-ng-data" --sentence_silence 0 --output_raw | {
+  dd bs=320 count=1 2>/dev/null
+  if [ -n "$status" ]; then echo playing > "$status"; fi
+  cat
+ } | /usr/bin/aplay -q -D plughw:0,0 -t raw -f S16_LE -c 1 -r "$rate"
+fi
+if [ -n "$status" ]; then echo done > "$status"; fi

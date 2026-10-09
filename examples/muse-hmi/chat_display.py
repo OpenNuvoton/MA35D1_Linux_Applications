@@ -84,9 +84,9 @@ class ChatDisplay:
             self.waiting_confirmation=event.get('status')=='pending_user_confirmation'
             self.set_status('Approval needed in Muse app' if self.waiting_confirmation else 'Muse is working' if event.get('status') in ('running','in_progress') else 'Live chat')
             return
-        if name=='approvals.snapshot' and event.get('pending_approvals'):
-            self.waiting_confirmation=True
-            self.set_status('Approval needed in Muse app')
+        if name=='approvals.snapshot':
+            self.waiting_confirmation=bool(event.get('pending_approvals'))
+            self.set_status('Approval needed in Muse app' if self.waiting_confirmation else 'Live chat')
             return
         if name not in ('message.user', 'message.assistant', 'delta.message_start', 'delta.text_append', 'delta.message_done', 'delta.presentation'):
             return

@@ -65,3 +65,11 @@ def test_stop_speech_button_does_not_activate_microphone_or_volume():
     assert d.tap(450,550)=='voice'
     assert d.tap(670,550) is None
     assert d.volume==70 and not d.muted
+
+
+def test_empty_approval_snapshot_clears_waiting_banner():
+    d=model()
+    d.event(dict(event='approvals.snapshot',message_id='',text='',pending_approvals=[{'approval_id':'pending'}]))
+    assert d.waiting_confirmation and d.status=='Approval needed in Muse app'
+    d.event(dict(event='approvals.snapshot',message_id='',text='',pending_approvals=[]))
+    assert not d.waiting_confirmation and d.status=='Live chat'
