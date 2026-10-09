@@ -1,0 +1,20 @@
+[Unit]
+Description=Muse gateway running on MA35
+After=network-online.target muse-media.service muse-swap.service
+Wants=network-online.target muse-media.service muse-swap.service
+Requires=mnt-sd.mount
+
+[Service]
+ExecStart=/mnt/sd/muse/gateway/muse-gateway /mnt/sd/muse/state
+Environment=MUSE_CA_FILE=/mnt/sd/muse/media/ca-certificates.crt
+Restart=on-failure
+RestartSec=3
+UMask=0077
+KillMode=control-group
+LimitCORE=0
+MemoryMax=52M
+TasksMax=16
+OOMScoreAdjust=0
+
+[Install]
+WantedBy=multi-user.target

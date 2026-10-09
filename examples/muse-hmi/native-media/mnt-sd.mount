@@ -1,0 +1,13 @@
+[Unit]
+Description=Muse SD storage
+Before=muse-media.service muse-gateway.service muse-swap.service
+
+[Mount]
+What=/dev/mmcblk1p1
+Where=/mnt/sd
+Type=ext4
+Options=rw,noatime
+TimeoutSec=15
+
+[Install]
+WantedBy=multi-user.target

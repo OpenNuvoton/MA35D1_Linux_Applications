@@ -1,9 +1,12 @@
 [Unit]
 Description=Muse board-native media API and renderer
-After=network.target
+After=network.target mnt-sd.mount
+Requires=mnt-sd.mount
 
 [Service]
-ExecStart=/opt/muse-media/muse-media
+ExecStart=/mnt/sd/muse/media/muse-media
+Environment=MUSE_MEDIA_BASE=/mnt/sd/muse/media/
+Environment=MUSE_MEDIA_CACHE_DIR=/mnt/sd/muse/media-cache
 Restart=on-failure
 RestartSec=2
 KillMode=control-group

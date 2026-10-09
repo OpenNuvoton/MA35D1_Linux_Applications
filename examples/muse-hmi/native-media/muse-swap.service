@@ -1,0 +1,14 @@
+[Unit]
+Description=Muse SD virtual memory
+Requires=mnt-sd.mount
+After=mnt-sd.mount
+Before=muse-media.service muse-gateway.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c '/bin/busybox grep -q /mnt/sd/muse/swapfile /proc/swaps || /bin/busybox swapon /mnt/sd/muse/swapfile'
+ExecStop=/bin/busybox swapoff /mnt/sd/muse/swapfile
+
+[Install]
+WantedBy=multi-user.target
