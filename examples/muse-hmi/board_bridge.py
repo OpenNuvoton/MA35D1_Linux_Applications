@@ -172,6 +172,9 @@ async def serve():
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
+    if (Path(os.environ['MUSEGADGET_STATE_DIR']) / 'board-native.enabled').exists() and '--check' not in sys.argv:
+        logging.info('Gateway migrated to the MA35 board; laptop service retired')
+        raise SystemExit(0)
     if '--check' in sys.argv:
         result=BoardExecutor().run('device.health', {})
         print(result)
