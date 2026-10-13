@@ -259,3 +259,12 @@ Source is Apache-2.0 unless otherwise indicated. Vendored nlohmann JSON is MIT;
 stb is dual MIT/public-domain. Their notices are retained in each header.
 Pairing credentials, recordings, generated speech, models, logs, binaries and
 runtime state are ignored by Git.
+
+
+## Shared XML adaptive-home UI
+
+The optional [ten-screen Qt/LVGL overlay](xmlui/README.md) builds on the native
+five-tab runtime. One XML component tree drives both layers, with Muse-selected
+templates, zip/time/weather context, guided five-band listening comparisons and
+picture-rich daily reports. The [branded architecture prospectus and HD reel](docs/efficiency-adaptive-home/README.md)
+show actual board captures and explicit prototype limits.

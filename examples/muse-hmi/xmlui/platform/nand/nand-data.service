@@ -1,0 +1,14 @@
+[Unit]
+Description=MA35 separate NAND application data
+Requires=mnt-sd.mount
+After=mnt-sd.mount
+Before=muse-media.service muse-gateway.service smart-home-overlay.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh /mnt/sd/muse/nand-tools/mount-data.sh
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

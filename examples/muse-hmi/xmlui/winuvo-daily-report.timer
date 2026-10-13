@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Winuvo picture PDF at 08:00 Pacific
+
+[Timer]
+OnCalendar=*-*-* 08:00:00 America/Los_Angeles
+Persistent=true
+Unit=winuvo-daily-report.service
+
+[Install]
+WantedBy=timers.target

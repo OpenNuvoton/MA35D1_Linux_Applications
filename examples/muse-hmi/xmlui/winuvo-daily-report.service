@@ -1,0 +1,9 @@
+[Unit]
+Description=Winuvo daily adaptive picture briefing via Muse
+Requires=smart-home-overlay.service muse-gateway.service
+After=smart-home-overlay.service muse-gateway.service
+
+[Service]
+Type=oneshot
+ExecStart=/mnt/sd/muse/gateway/muse-gateway --local '{"action":"adaptive.refresh","params":{"report":true}}'
+TimeoutStartSec=60

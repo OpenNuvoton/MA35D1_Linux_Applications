@@ -1,0 +1,13 @@
+[Unit]
+Description=Winuvo time-zone database stored on NAND
+Requires=nand-data.service
+After=nand-data.service
+Before=smart-home-overlay.service muse-gateway.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/mount --bind /mnt/nand/system/zoneinfo /usr/share/zoneinfo
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,28 @@
+[Unit]
+Description=Muse smart home shared XML Qt and LVGL compositor
+Requires=nand-data.service muse-media.service winuvo-timezones.service
+After=winuvo-timezones.service nand-data.service muse-media.service muse-gateway.service
+
+[Service]
+WorkingDirectory=/mnt/nand/apps/smart-home-overlay
+ExecStart=/mnt/nand/apps/smart-home-overlay/smart-home-overlay --xml /mnt/nand/apps/smart-home-overlay/xml --folder /mnt/nand/apps/smart-home-overlay --fb /dev/fb0
+Environment=QT_QPA_PLATFORM=offscreen
+Environment=QT_PLUGIN_PATH=/mnt/nand/apps/smart-home-overlay/plugins
+Environment=LD_LIBRARY_PATH=/mnt/nand/apps/smart-home-overlay/lib
+Environment=MUSE_MEDIA_BASE=/mnt/sd/muse/media/
+Environment=MUSE_MEDIA_CACHE_DIR=/mnt/sd/muse/media-cache
+Environment=QT_QPA_FONTDIR=/mnt/nand/apps/smart-home-overlay/assets
+Environment=XDG_RUNTIME_DIR=/tmp/smart-home-qt
+ExecStartPre=/bin/mkdir -p /tmp/smart-home-qt
+ExecStartPre=/bin/chmod 700 /tmp/smart-home-qt
+ExecStopPost=/bin/rm -f /tmp/muse-xmlui.active
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+UMask=0077
+MemoryMax=96M
+TasksMax=24
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

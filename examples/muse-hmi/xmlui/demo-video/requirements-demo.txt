@@ -1,0 +1,4 @@
+numpy==2.4.4
+Pillow==10.2.0
+PyMuPDF==1.27.2
+kokoro-onnx==0.6.1

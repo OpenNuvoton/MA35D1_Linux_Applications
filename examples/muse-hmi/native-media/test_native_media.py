@@ -101,6 +101,39 @@ def test_hardware_controls_report_missing_codec(binary):
  assert all(not result['ok'] and 'unavailable' in result['error'] for result in results)
 
 
+@pytest.mark.parametrize('saved_text',[None,{'kind':'text','text':'Saved presentation after power cycle','caption':'Offline topic'}])
+def test_startup_draws_text_without_muse_or_automatic_audio(binary,tmp_path,saved_text):
+ """Real service startup must draw a frame even when no gateway is connected."""
+ fb=tmp_path/'fb';fb.write_bytes(bytes(1024*600*4))
+ cache=tmp_path/'cache';cache.mkdir()
+ # A saved radio must remain selected without playing automatically at boot.
+ (cache/'tabs.json').write_text(json.dumps([saved_text,None,None,None,{'kind':'audio','url':'https://example.test/radio','live':True}]))
+ env={**os.environ,'MUSE_MEDIA_BASE':str(tmp_path)+'/', 'MUSE_MEDIA_CACHE_DIR':str(cache)}
+ proc=subprocess.Popen([str(binary),str(fb)],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+ try:
+  for _ in range(100):
+   assert proc.poll() is None,'service exited during startup'
+   try:
+    body=b'{"action":"media.status"}'
+    with socket.create_connection(('127.0.0.1',8765),timeout=.1) as client:
+     client.sendall(b'POST /media HTTP/1.1\r\nContent-Length: '+str(len(body)).encode()+b'\r\n\r\n'+body)
+     data=b''
+     while chunk:=client.recv(65536):data+=chunk
+    status=json.loads(data.split(b'\r\n\r\n',1)[1])['payload']
+    if status['frames']>0:break
+   except OSError:pass
+   time.sleep(.02)
+  else:pytest.fail('startup never drew the offline interface')
+  assert status['state']=='ready' and status['media_kind']=='text'
+  assert status['worker_pid']>0 and not status['audio_running']
+  assert status['tabs'][4]['cached'] and not status['tabs'][4]['active']
+  assert any(fb.read_bytes()),'framebuffer remained blank'
+  saved=json.loads((cache/'tabs.json').read_text())
+  if saved_text:assert saved[0]['text']==saved_text['text']
+ finally:
+  proc.terminate();proc.wait(timeout=5)
+
+
 def test_hot_tabs_restore_content_views_and_survive_restart(binary, tmp_path):
  """Exercise the renderer and real HTTP API, including an offline cached image."""
  from PIL import Image

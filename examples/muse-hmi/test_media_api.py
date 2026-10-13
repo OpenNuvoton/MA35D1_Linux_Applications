@@ -49,3 +49,14 @@ def test_genui_uses_native_gateway_for_pdf_and_discovery():
  command=shlex.split(child.call_args.args[0][-1])
  assert command[:2]==['/mnt/sd/muse/gateway/muse-gateway','--local']
  assert json.loads(command[2])=={'action':'genui.present','params':params}
+
+
+def test_xml_context_and_calibration_reach_the_compositor_via_native_gateway():
+ for action in ('xmlui.templates','xmlui.present','adaptive.configure','adaptive.report','audio.autotune','audio.tone'):
+  assert action in MEDIA_SPECS
+  params={'example':"Resident's requested context"}
+  with patch('media_api.subprocess.run',return_value=subprocess.CompletedProcess([],0,b'{"ok":true}',b'')) as child:
+   assert call_media(['ssh','board'],action,params)['ok']
+  command=shlex.split(child.call_args.args[0][-1])
+  assert command[:2]==['/mnt/sd/muse/gateway/muse-gateway','--local']
+  assert json.loads(command[2])=={'action':action,'params':params}

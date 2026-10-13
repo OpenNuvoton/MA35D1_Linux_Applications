@@ -1,0 +1,10 @@
+build/
+vendor/lvgl/
+__pycache__/
+*.pyc
+preferences.json
+adaptive-context.json
+screen-data.json
+preferred-eq.json
+vendor/tts/
+.venv-demo/
