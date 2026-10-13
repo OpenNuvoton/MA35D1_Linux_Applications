@@ -1,0 +1,58 @@
+<component name="air" title="Air quality" question="Show current outdoor air quality for my configured home ZIP with AQI, pollutant, source and observation time; do not invent indoor sensor readings">
+  <api>
+    <prop name="title" type="string" default="Air quality" description="title" />
+    <prop name="kicker" type="string" default="BREATHE EASY" description="kicker" />
+    <prop name="hero" type="string" default="Fresh starts here" description="hero" />
+    <prop name="summary" type="string" default="Illustrative readings; no physical air sensor is connected" description="summary" />
+    <prop name="metric1_label" type="string" default="CO2" description="metric1 label" />
+    <prop name="metric1" type="string" default="620 ppm" description="metric1" />
+    <prop name="metric2_label" type="string" default="Humidity" description="metric2 label" />
+    <prop name="metric2" type="string" default="44%" description="metric2" />
+    <prop name="metric3_label" type="string" default="Air score" description="metric3 label" />
+    <prop name="metric3" type="string" default="92 demo" description="metric3" />
+    <prop name="source" type="string" default="SAMPLE SCENARIO / ask Muse for sourced content" description="source" />
+    <prop name="headline1" type="string" default="Connected comfort, thoughtful design" description="headline1" />
+    <prop name="headline2" type="string" default="Make room for a smarter routine" description="headline2" />
+    <prop name="headline3" type="string" default="Small steps toward a greener home" description="headline3" />
+    <prop name="trend" type="string" default="22,46,38,69,55,84,73" description="trend" />
+    <prop name="question" type="string" default="Show current outdoor air quality for my configured home ZIP with AQI, pollutant, source and observation time; do not invent indoor sensor readings" description="question" />
+    <prop name="level" type="number" default="72" description="Gauge or progress value, 0 through 100" />
+  </api>
+  <view width="1024" height="600">
+    <layer engine="lvgl" z="0">
+      <lv_obj x="0" y="0" width="1024" height="600" style_bg_color="0xedf6fa" style_border_width="0" style_pad_all="0" scrollable="false" />
+      <lv_label x="24" y="18" width="180" height="35" text="WINUVO" style_text_color="0x173a50" style_text_font="heading" />
+      <lv_label x="25" y="51" width="180" height="24" text="ADAPTIVE LIVING / Muse" style_text_color="0x52768b" style_text_font="small" />
+      <use component="Action" name="nav_home" x="19" y="92" caption="Home pulse" accent="0x29475e" action="screen:home" />
+      <use component="Action" name="nav_weather" x="19" y="139" caption="Weather" accent="0x29475e" action="screen:weather" />
+      <use component="Action" name="nav_news" x="19" y="186" caption="News" accent="0x29475e" action="screen:news" />
+      <use component="Action" name="nav_climate" x="19" y="233" caption="Climate" accent="0x29475e" action="screen:climate" />
+      <use component="Action" name="nav_lighting" x="19" y="280" caption="Lighting" accent="0x29475e" action="screen:lighting" />
+      <use component="Action" name="nav_energy" x="19" y="327" caption="Energy" accent="0x29475e" action="screen:energy" />
+      <use component="Action" name="nav_security" x="19" y="374" caption="Security" accent="0x29475e" action="screen:security" />
+      <use component="Action" name="nav_air" x="19" y="421" caption="Air quality" accent="0x075fdb" action="screen:air" />
+      <use component="Action" name="nav_scenes" x="19" y="468" caption="Scenes" accent="0x29475e" action="screen:scenes" />
+      <use component="Action" name="nav_sound" x="19" y="515" caption="Sound lab" accent="0x29475e" action="screen:sound" />
+      <lv_label x="226" y="92" width="550" height="24" text="$kicker" style_text_color="0x007f89" style_text_font="small" />
+      <lv_bar name="living_pulse" x="226" y="520" width="762" height="9" value="$level" style_bg_color="0xc5dbe5" style_radius="6" animation="pulse" />
+    </layer>
+    <layer engine="qt" z="1">
+      <qt_visual x="207" y="0" width="817" height="600" kind="background" />
+      <qt_visual x="788" y="23" width="200" height="34" kind="brands" />
+      <lv_label x="226" y="16" width="555" height="52" text="$hero" style_text_color="0x173a50" style_text_font="heading" />
+      <lv_label x="229" y="64" width="760" height="29" text="$summary" style_text_color="0x506b7d" style_text_font="small" />
+      <use component="Metric" x="226" y="127" caption="$metric1_label" value="$metric1" accent="0x08777e" />
+      <use component="Metric" x="480" y="127" caption="$metric2_label" value="$metric2" accent="0xa35f07" />
+      <use component="Metric" x="734" y="127" caption="$metric3_label" value="$metric3" accent="0x753eb7" />
+      <qt_visual x="226" y="267" width="454" height="239" kind="chart" />
+      <media_view x="697" y="267" width="291" height="173" />
+      <lv_label x="702" y="447" width="285" height="44" text="$source" style_text_color="0x4f6d82" style_text_font="small" />
+      <use component="Action" x="704" y="484" width="284" height="30" caption="Ask Muse about this screen" accent="0x1269b3" action="muse:question" />
+      <use component="Action" x="226" y="549" width="142" height="38" caption="Photos" accent="0x23576d" action="media:image" />
+      <use component="Action" x="379" y="549" width="142" height="38" caption="PDF" accent="0x23576d" action="media:pdf" />
+      <use component="Action" x="532" y="549" width="142" height="38" caption="Video" accent="0x23576d" action="media:video" />
+      <use component="Action" x="685" y="549" width="142" height="38" caption="Radio" accent="0x23576d" action="media:audio" />
+      <use component="Action" x="838" y="549" width="142" height="38" caption="Text" accent="0x23576d" action="media:text" />
+    </layer>
+  </view>
+</component>
