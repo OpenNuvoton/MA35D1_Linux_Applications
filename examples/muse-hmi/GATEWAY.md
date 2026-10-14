@@ -1,6 +1,6 @@
 # Optional Muse BLE/chat/voice gateway
 
-This example connects a Nuvoton MA35 Linux HMI to Muse through a Linux laptop or
+This optional legacy mode connects a Nuvoton MA35 Linux HMI to Muse through a Linux laptop or
 other Linux gateway. The gateway pairs over BLE and holds the encrypted Muse
 session. SSH over Ethernet carries framebuffer updates, touch events and ALSA
 audio to the board. Python and the speech model run on the gateway, so compact
@@ -23,6 +23,9 @@ MA35 driver or a claim that every MA35D1 configuration was tested.
 - On-screen headphone volume/mute and a temperature dial controlled by Muse.
 - Thermostat simulation reports room temperature and Heating/Cooling/Idle state.
   No physical sensor or HVAC equipment is connected. Headphone mixer control is real.
+
+The current five-tab GenUI configuration uses the [board-native gateway](README.md).
+This Python mode is retained for BLE onboarding and legacy voice notes.
 
 ## Setup
 
