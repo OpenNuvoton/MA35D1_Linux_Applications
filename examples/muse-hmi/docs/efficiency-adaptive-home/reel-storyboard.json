@@ -1,0 +1,141 @@
+{
+  "seed": 847410703,
+  "duration": 30,
+  "voice": "Kokoro af_heart",
+  "speech_rate_adjustment": 1.0,
+  "source": "live MA35 captures, 12 October 2026",
+  "scenes": [
+    {
+      "screen": "home",
+      "title": "HOME IN MOTION",
+      "caption": "A home that moves with you.",
+      "spoken_text": "A home that moves with you.",
+      "voice_seconds": 1.4506666666666668,
+      "start": 0,
+      "voice_start": 0.12,
+      "voice_end": 1.5706666666666669,
+      "end": 2.0558095238095238
+    },
+    {
+      "screen": "weather",
+      "title": "CHANGE YOUR PLACE",
+      "caption": "New zip code. New forecast.",
+      "spoken_text": "New zip code. New forecast.",
+      "voice_seconds": 1.8773333333333333,
+      "start": 2.0558095238095238,
+      "voice_start": 2.175809523809524,
+      "voice_end": 4.053142857142857,
+      "end": 4.4099047619047615
+    },
+    {
+      "screen": "news",
+      "title": "YOUR LOCAL BRIEFING",
+      "caption": "Local stories, right where you are.",
+      "spoken_text": "Local stories, right where you are.",
+      "voice_seconds": 1.984,
+      "start": 4.4099047619047615,
+      "voice_start": 4.529904761904762,
+      "voice_end": 6.513904761904762,
+      "end": 6.870666666666666
+    },
+    {
+      "screen": "air",
+      "title": "AIR, WITH CONTEXT",
+      "caption": "Air estimates guide healthier choices.",
+      "spoken_text": "Air estimates guide healthier choices.",
+      "voice_seconds": 2.176,
+      "start": 6.870666666666666,
+      "voice_start": 6.990666666666666,
+      "voice_end": 9.166666666666666,
+      "end": 9.523428571428573
+    },
+    {
+      "screen": "climate",
+      "title": "COMFORT IN CONTEXT",
+      "caption": "Comfort follows the weather.",
+      "spoken_text": "Comfort follows the weather.",
+      "voice_seconds": 1.5146666666666666,
+      "start": 9.523428571428573,
+      "voice_start": 9.643428571428572,
+      "voice_end": 11.158095238095239,
+      "end": 11.514857142857146
+    },
+    {
+      "screen": "lighting",
+      "title": "FOLLOW THE SUN",
+      "caption": "Lighting follows the sun.",
+      "spoken_text": "Lighting follows the sun.",
+      "voice_seconds": 1.536,
+      "start": 11.514857142857146,
+      "voice_start": 11.634857142857145,
+      "voice_end": 13.170857142857145,
+      "end": 13.527619047619051
+    },
+    {
+      "screen": "energy",
+      "title": "ONE HOME, ONE MIX",
+      "caption": "Energy works with the whole home.",
+      "spoken_text": "Energy works with the whole home.",
+      "voice_seconds": 1.6853333333333333,
+      "start": 13.527619047619051,
+      "voice_start": 13.64761904761905,
+      "voice_end": 15.332952380952385,
+      "end": 15.68971428571429
+    },
+    {
+      "screen": "security",
+      "title": "READY TO CONNECT",
+      "caption": "Security, ready for cameras and doors.",
+      "spoken_text": "Security, ready for cameras and doors.",
+      "voice_seconds": 2.3893333333333335,
+      "start": 15.68971428571429,
+      "voice_start": 15.80971428571429,
+      "voice_end": 18.199047619047622,
+      "end": 18.55580952380953
+    },
+    {
+      "screen": "scenes",
+      "title": "REMIX THE EVENING",
+      "caption": "Evening routines, remixed.",
+      "spoken_text": "Evening routines, remixed.",
+      "voice_seconds": 1.6853333333333333,
+      "start": 18.55580952380953,
+      "voice_start": 18.67580952380953,
+      "voice_end": 20.361142857142863,
+      "end": 20.717904761904766
+    },
+    {
+      "screen": "home",
+      "title": "PLAY YOUR FAVORITES",
+      "caption": "Photos, video, radio. Your favorites.",
+      "spoken_text": "Photos, video, radio. Your favorites.",
+      "voice_seconds": 2.56,
+      "start": 20.717904761904766,
+      "voice_start": 20.837904761904767,
+      "voice_end": 23.397904761904766,
+      "end": 23.75466666666667
+    },
+    {
+      "screen": "sound",
+      "title": "SOUND, YOUR WAY",
+      "caption": "Sound Lab. Tune your theater by ear.",
+      "spoken_text": "Sound Lab. Tune your theater by ear.",
+      "voice_seconds": 2.176,
+      "start": 23.75466666666667,
+      "voice_start": 23.87466666666667,
+      "voice_end": 26.05066666666667,
+      "end": 26.40742857142857
+    },
+    {
+      "screen": "finale",
+      "title": "A NEW DAWN",
+      "caption": "Winuvo. A new dawn for adaptive living.",
+      "spoken_text": "Win yoo voh. A new dawn for adaptive living.",
+      "voice_seconds": 2.7306666666666666,
+      "start": 26.40742857142857,
+      "voice_start": 26.527428571428572,
+      "voice_end": 29.25809523809524,
+      "end": 30
+    }
+  ]
+}
