@@ -15,3 +15,7 @@ genui/build/
 genui/dist/
 *.egg-info/
 known_hosts
+
+native-media/build/
+.venv/
+*.pyc

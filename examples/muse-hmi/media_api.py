@@ -41,8 +41,8 @@ def call_media(ssh,action,params):
   params={'kind':'image','url':url,'caption':caption,'fullscreen':params.get('fullscreen',False)}
  try:
   request=json.dumps({'action':action,'params':params})
-  if action.startswith('genui.') or action in ('sports.baseball','speech.read_text','speech.stop'):
-   # These commands need gateway orchestration (PDF generation, discovery or TTS).
+  if action.startswith(('genui.','xmlui.','adaptive.')) or action in ('sports.baseball','speech.read_text','speech.stop','audio.autotune','audio.tone'):
+   # Gateway orchestration routes XML/adaptive commands to the compositor API.
    command='/mnt/sd/muse/gateway/muse-gateway --local '+shlex.quote(request)
    proc=subprocess.run(ssh+[command],capture_output=True,timeout=65 if action=='sports.baseball' else 20)
   else:
@@ -74,3 +74,8 @@ MEDIA_SPECS.update(GENUI_SPECS)
 
 MEDIA_SPECS["speech.read_text"]={"description":"Read the current Text panel aloud on board headphones, including generated cards, tables and charts. Does not replace the Audio tab or radio station.","required":{},"optional":{},"timeout_ms":10000}
 MEDIA_SPECS["speech.stop"]={"description":"Stop Text panel speech immediately, including voice synthesis in progress. Keeps the radio selection.","required":{},"optional":{},"timeout_ms":10000}
+
+from xmlui_api import XMLUI_SPECS
+MEDIA_SPECS.update(XMLUI_SPECS)
+from adaptive_api import ADAPTIVE_SPECS
+MEDIA_SPECS.update(ADAPTIVE_SPECS)

@@ -248,3 +248,12 @@ limits get bounded retries in the native wrapper. The bundled curl retry option
 can return success on a size error, so that option is deliberately avoided. Videos larger than the 64 MiB download cache
 stream directly over HTTPS, with resolved YouTube URLs reused briefly on tab
 revisits. Failed downloads remove their partial files.
+
+
+## Optional shared XML compositor
+
+[xmlui](../xmlui/README.md) owns framebuffer/touch input while active. Native
+media publishes its existing pixel surface through a sequence-counted shared
+frame, leaving all five media tabs and audio available to the overlay. The
+gateway routes xmlui.*, adaptive.*, audio.tone and audio.autotune to the local
+XML API. Stopping the compositor restores the native renderer.

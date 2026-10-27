@@ -1,0 +1,22 @@
+<components>
+  <component name="Action">
+    <api>
+      <prop name="caption" type="string" default="Button" description="caption" />
+      <prop name="accent" type="string" default="0x075fdb" description="accent" />
+    </api>
+    <view extends="lv_button" width="174" height="42" style_radius="13" style_bg_color="$accent" style_border_width="0" style_pad_all="0" scrollable="false">
+      <lv_label text="$caption" align="center" style_text_color="0xffffff" style_text_font="body" />
+    </view>
+  </component>
+  <component name="Metric">
+    <api>
+      <prop name="caption" type="string" default="Metric" description="caption" />
+      <prop name="value" type="string" default="--" description="value" />
+      <prop name="accent" type="string" default="0x08777e" description="accent" />
+    </api>
+    <view extends="lv_obj" width="226" height="118" style_radius="22" style_bg_color="0xffffff" style_border_width="1" style_border_color="$accent" style_pad_all="0" scrollable="false">
+      <lv_label x="18" y="13" width="195" height="26" text="$caption" style_text_color="0x546d82" style_text_font="small" />
+      <lv_label x="18" y="43" width="196" height="58" text="$value" style_text_color="$accent" style_text_font="display" />
+    </view>
+  </component>
+</components>

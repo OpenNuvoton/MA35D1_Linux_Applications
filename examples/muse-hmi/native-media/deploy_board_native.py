@@ -40,6 +40,8 @@ def main():
     files += [(ROOT / 'speak', '/mnt/sd/muse/tts/speak', 0o755)]
     files += [(ROOT / name, '/etc/systemd/system/' + name, 0o644)
               for name in ('muse-media.service', 'muse-gateway.service')]
+    files += [(ROOT / 'assets' / name, '/mnt/sd/muse/media/assets/' + name, 0o644)
+              for name in ('winbond-logo.png', 'nuvoton-logo.png')]
     if args.enable_swap:
         files.append((ROOT / 'muse-swap.service', '/etc/systemd/system/muse-swap.service', 0o644))
     if args.backend_dir:
