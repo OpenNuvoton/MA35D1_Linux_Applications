@@ -11,3 +11,7 @@ muse-logo.svg
 jollybot.gif
 
 framebuffer_writer
+genui/build/
+genui/dist/
+*.egg-info/
+known_hosts
