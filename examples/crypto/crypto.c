@@ -674,13 +674,18 @@ out:
  *      ./crypto-demo aead <case>
  */
 #define AEAD_TAGLEN	16
-#define AEAD_MAXBUF	256
+#define AEAD_MAXPT	65536
+/* largest aead-repro request: 64 KB payload + AAD just over the 4 KB limit + tag */
+#define AEAD_MAXBUF	(AEAD_MAXPT + 4096 + 2 * AEAD_TAGLEN)
 
 /* deliberately not byte-order symmetric, so key endianness bugs are not hidden */
 static const unsigned char g_key[16] = {
 	0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
 	0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
 };
+
+/* auth tag length used by aead_run() */
+static int aead_authsize = AEAD_TAGLEN;
 
 /* returns number of output bytes (without AAD), or -errno */
 static int aead_run(const char *alg, const unsigned char *key, int keylen,
@@ -693,7 +698,7 @@ static int aead_run(const char *alg, const unsigned char *key, int keylen,
 	struct msghdr msg = {};
 	struct cmsghdr *cmsg;
 	char cbuf[CMSG_SPACE(4) + CMSG_SPACE(4 + 16) + CMSG_SPACE(4)] = {};
-	unsigned char inbuf[AEAD_MAXBUF], outbuf[AEAD_MAXBUF];
+	static unsigned char inbuf[AEAD_MAXBUF], outbuf[AEAD_MAXBUF];
 	struct iovec iov;
 	struct af_alg_iv *aiv;
 	int tfmfd, opfd, inlen, outlen, n, got = 0, ret;
@@ -707,7 +712,7 @@ static int aead_run(const char *alg, const unsigned char *key, int keylen,
 		goto err_tfm;
 	}
 	if (setsockopt(tfmfd, SOL_ALG, ALG_SET_KEY, key, keylen) < 0 ||
-	    setsockopt(tfmfd, SOL_ALG, ALG_SET_AEAD_AUTHSIZE, NULL, AEAD_TAGLEN) < 0) {
+	    setsockopt(tfmfd, SOL_ALG, ALG_SET_AEAD_AUTHSIZE, NULL, aead_authsize) < 0) {
 		ret = -errno;
 		goto err_tfm;
 	}
@@ -720,7 +725,7 @@ static int aead_run(const char *alg, const unsigned char *key, int keylen,
 	memcpy(inbuf, aad, aadlen);
 	memcpy(inbuf + aadlen, data, datalen);
 	inlen = aadlen + datalen;
-	outlen = aadlen + datalen + (encrypt ? AEAD_TAGLEN : -AEAD_TAGLEN);
+	outlen = aadlen + datalen + (encrypt ? aead_authsize : -aead_authsize);
 
 	msg.msg_control = cbuf;
 	msg.msg_controllen = sizeof(cbuf);
@@ -1338,6 +1343,380 @@ static int ecc_verify_test(const char *c, int iters)
 
 #define CRYPTO_DEMO_VERSION "2.0-regular"
 
+/*
+ *  GCM/CCM sweep of ma35-optee-aes-gcm/ccm (Unex issue #2).
+ *
+ *  The driver formats J0/B0 + padded AAD + padded payload into a 4096-byte
+ *  DMA buffer. The first DMA holds J0/B0, the whole AAD and as much payload as
+ *  fits; larger payloads continue in cascaded DMAs of up to 4080 bytes (GCM)
+ *  or of one block (CCM, a TSI limitation). AAD is not split, so J0/B0 + AAD
+ *  (+ one payload block) must fit in the first DMA, otherwise the request
+ *  fails with EINVAL. Before the cascade fix, a formatted
+ *  length over 4096 bytes (e.g. GCM, AAD 0, payload 4081) panicked the kernel.
+ *
+ *  Every case uses a fresh random key/IV/AAD/payload and checks:
+ *    - driver encrypt == kernel software gcm(aes)/ccm(aes) (ciphertext + tag)
+ *    - driver decrypt of that ciphertext returns the original payload
+ *    - a flipped tag byte, first/last ciphertext byte and AAD byte are rejected
+ *      with EBADMSG
+ *    - cases over the AAD limit fail with EINVAL for encrypt and decrypt
+ *  The sweep prints every case and stops at the first error.
+ *      ./crypto-demo aead-repro gcm|ccm|all
+ *      ./crypto-demo aead-repro gcm|ccm pt_len [aad_len [key_bits [tag_len [ccm_L]]]]
+ */
+static void rand_fill(unsigned char *b, int n)
+{
+	int fd = open("/dev/urandom", O_RDONLY);
+
+	if (fd < 0 || read(fd, b, n) != n) {
+		int i;
+
+		for (i = 0; i < n; i++)
+			b[i] = rand();
+	}
+	if (fd >= 0)
+		close(fd);
+}
+
+#define AEAD_DMA_BUF	4096	/* AES_BUFF_SIZE of the driver */
+
+struct aead_case {
+	int pt, aad, keylen, tag, ccm_l;
+};
+
+/* J0 (GCM) or B0 + encoded AAD (CCM), padded to blocks */
+static int aead_info_len(int ccm, int aad)
+{
+	if (ccm)
+		return 16 + (aad ? (aad + 2 + 15) / 16 * 16 : 0);
+	return 16 + (aad + 15) / 16 * 16;
+}
+
+/* largest AAD that still leaves room for one payload block in the first DMA */
+static int aead_aad_max(int ccm)
+{
+	return ccm ? AEAD_DMA_BUF - 16 - 16 - 2 : AEAD_DMA_BUF - 16 - 16;
+}
+
+static int aead_expect(int ccm, int aad, int pt)
+{
+	if (aad > AEAD_DMA_BUF ||
+	    aead_info_len(ccm, aad) + (pt ? 16 : 0) > AEAD_DMA_BUF)
+		return -EINVAL;
+	return 0;
+}
+
+/* payload bytes the first DMA can hold */
+static int aead_first_room(int ccm, int aad)
+{
+	return AEAD_DMA_BUF - aead_info_len(ccm, aad);
+}
+
+static int aead_dma_count(int ccm, int aad, int pt)
+{
+	int first = aead_first_room(ccm, aad);
+
+	if (pt <= first)
+		return 1;
+	/* the TSI takes cascaded CCM DMAs only one block at a time */
+	if (ccm)
+		return 1 + (pt - first + 15) / 16;
+	return 1 + (pt - first + AEAD_DMA_BUF - 16 - 1) / (AEAD_DMA_BUF - 16);
+}
+
+static int aead_first_diff(const unsigned char *a, const unsigned char *b, int n)
+{
+	int i;
+
+	for (i = 0; i < n; i++)
+		if (a[i] != b[i])
+			return i;
+	return -1;
+}
+
+static void aead_dump_at(const char *tag, const unsigned char *b, int len, int at)
+{
+	int s = at & ~15, e = s + 16 < len ? s + 16 : len, i;
+
+	printf("    %-9s [%5d]: ", tag, s);
+	for (i = s; i < e; i++)
+		printf("%02x", b[i]);
+	printf("\n");
+}
+
+static unsigned char ar_aad[AEAD_MAXBUF], ar_pt[AEAD_MAXBUF], ar_sw[AEAD_MAXBUF],
+		     ar_hw[AEAD_MAXBUF], ar_out[AEAD_MAXBUF];
+
+/* returns 0 on success, 1 on failure */
+static int aead_sweep_one(int ccm, int idx, const struct aead_case *c)
+{
+	const char *hw = ccm ? "ma35-optee-aes-ccm" : "ma35-optee-aes-gcm";
+	const char *sw = ccm ? "ccm(aes)" : "gcm(aes)";
+	static const char *const what[] = {
+		"tag (last byte)", "ciphertext (first byte)", "ciphertext (last byte)", "AAD (last byte)"
+	};
+	unsigned char key[32], iv[16] = { 0 }, *p;
+	int ivlen = ccm ? 16 : 12, expect = aead_expect(ccm, c->aad, c->pt);
+	int n_sw, n_hw, rc, d, i;
+
+	printf("[%4d] %s key=%d tag=%d", idx, ccm ? "ccm" : "gcm", c->keylen * 8, c->tag);
+	if (ccm)
+		printf(" L=%d", c->ccm_l);
+	printf(" aad=%d pt=%d", c->aad, c->pt);
+	if (expect)
+		printf(" (over the AAD limit, expect EINVAL) ... ");
+	else
+		printf(" (formatted %d B, %d DMA) ... ",
+		       aead_info_len(ccm, c->aad) + (c->pt + 15) / 16 * 16,
+		       aead_dma_count(ccm, c->aad, c->pt));
+	fflush(stdout);
+
+	aead_authsize = c->tag;
+	rand_fill(key, c->keylen);
+	rand_fill(ar_aad, c->aad);
+	rand_fill(ar_pt, c->pt);
+	if (ccm) {
+		iv[0] = c->ccm_l - 1;
+		rand_fill(iv + 1, 15 - c->ccm_l);
+	} else {
+		rand_fill(iv, 12);
+	}
+
+	n_sw = aead_run(sw, key, c->keylen, iv, ivlen, ar_aad, c->aad, ar_pt, c->pt, 1, ar_sw);
+	if (n_sw != c->pt + c->tag) {
+		printf("FAIL: software %s encrypt returned %d\n", sw, n_sw);
+		return 1;
+	}
+	n_hw = aead_run(hw, key, c->keylen, iv, ivlen, ar_aad, c->aad, ar_pt, c->pt, 1, ar_hw);
+
+	if (expect) {
+		if (n_hw != expect) {
+			printf("FAIL: encrypt returned %d, expected %d\n", n_hw, expect);
+			return 1;
+		}
+		rc = aead_run(hw, key, c->keylen, iv, ivlen, ar_aad, c->aad, ar_sw, n_sw, 0, ar_out);
+		if (rc != expect) {
+			printf("FAIL: decrypt returned %d, expected %d\n", rc, expect);
+			return 1;
+		}
+		printf("enc/dec EINVAL, OK\n");
+		return 0;
+	}
+
+	if (n_hw != n_sw) {
+		printf("FAIL: encrypt returned %d, expected %d\n", n_hw, n_sw);
+		return 1;
+	}
+	d = aead_first_diff(ar_sw, ar_hw, n_sw);
+	if (d >= 0) {
+		printf("FAIL: encrypt %s mismatch at byte %d\n",
+		       d < c->pt ? "ciphertext" : "tag", d < c->pt ? d : d - c->pt);
+		aead_dump_at("software", ar_sw, n_sw, d);
+		aead_dump_at("driver", ar_hw, n_sw, d);
+		return 1;
+	}
+	printf("enc OK, ");
+
+	rc = aead_run(hw, key, c->keylen, iv, ivlen, ar_aad, c->aad, ar_sw, n_sw, 0, ar_out);
+	if (rc != c->pt) {
+		printf("FAIL: decrypt returned %d, expected %d\n", rc, c->pt);
+		return 1;
+	}
+	d = aead_first_diff(ar_pt, ar_out, c->pt);
+	if (d >= 0) {
+		printf("FAIL: decrypt plaintext mismatch at byte %d\n", d);
+		aead_dump_at("expected", ar_pt, c->pt, d);
+		aead_dump_at("driver", ar_out, c->pt, d);
+		return 1;
+	}
+	printf("dec OK, ");
+
+	for (i = 0; i < 4; i++) {
+		switch (i) {
+		case 0:
+			/* empty payload and AAD: the tag is not verified, a known TSI limitation */
+			p = (c->pt || c->aad) ? &ar_sw[n_sw - 1] : NULL;
+			break;
+		case 1:
+			p = c->pt ? &ar_sw[0] : NULL;
+			break;
+		case 2:
+			p = c->pt > 1 ? &ar_sw[c->pt - 1] : NULL;
+			break;
+		default:
+			p = c->aad ? &ar_aad[c->aad - 1] : NULL;
+			break;
+		}
+		if (!p)
+			continue;
+		*p ^= 1;
+		rc = aead_run(hw, key, c->keylen, iv, ivlen, ar_aad, c->aad, ar_sw, n_sw, 0, ar_out);
+		*p ^= 1;
+		if (rc != -EBADMSG) {
+			printf("FAIL: tampered %s: decrypt returned %d, expected %d (EBADMSG)\n",
+			       what[i], rc, -EBADMSG);
+			return 1;
+		}
+	}
+	printf("tamper rejected\n");
+	return 0;
+}
+
+#define AEAD_MAX_CASES	2048
+
+static struct aead_case ar_cases[AEAD_MAX_CASES];
+static int ar_ncases;
+
+static void aead_add(int ccm, int pt, int aad, int keylen, int tag, int l)
+{
+	struct aead_case c = { pt, aad, keylen, tag, ccm ? l : 0 };
+	int i;
+
+	if (pt < 0 || pt > AEAD_MAXPT || aad < 0 || pt + aad + tag > AEAD_MAXBUF ||
+	    (ccm && l < 8 && pt >= 1L << (8 * l)) || ar_ncases >= AEAD_MAX_CASES)
+		return;
+	for (i = 0; i < ar_ncases; i++)
+		if (!memcmp(&ar_cases[i], &c, sizeof(c)))
+			return;
+	ar_cases[ar_ncases++] = c;
+}
+
+static void aead_build_cases(int ccm)
+{
+	static const int big[] = { 4081, AEAD_MAXPT };
+	static const int off[] = { -16, -1, 0, 1, 16 };
+	int amax = aead_aad_max(ccm), chunk = AEAD_DMA_BUF - 16;
+	int aads[] = { 0, 1, 13, 14, 15, 16, 17, 20, 31, 32, 33, 256,
+		       1000, 2047, 2048, 4000, 4048, amax - 1, amax };
+	int i, j, k, f, a;
+
+	ar_ncases = 0;
+
+	/* 1. every payload length 0..48 (block padding), without and with AAD */
+	for (i = 0; i <= 48; i++) {
+		aead_add(ccm, i, 0, 16, 16, 4);
+		aead_add(ccm, i, 20, 16, 16, 4);
+	}
+
+	/*
+	 * 2. DMA boundaries for each AAD length: first DMA exactly full / one byte
+	 *    over, then each cascaded 4080-byte DMA exactly full / one byte over
+	 */
+	for (i = 0; i < (int)(sizeof(aads) / sizeof(aads[0])); i++) {
+		a = aads[i];
+		f = aead_first_room(ccm, a);
+		aead_add(ccm, 0, a, 16, 16, 4);
+		aead_add(ccm, 1, a, 16, 16, 4);
+		aead_add(ccm, 16, a, 16, 16, 4);
+		for (k = 0; k < 4; k++)
+			for (j = 0; j < (int)(sizeof(off) / sizeof(off[0])); j++)
+				aead_add(ccm, f + k * chunk + off[j], a, 16, 16, 4);
+		aead_add(ccm, 32768, a, 16, 16, 4);
+		aead_add(ccm, AEAD_MAXPT - 1, a, 16, 16, 4);
+		aead_add(ccm, AEAD_MAXPT, a, 16, 16, 4);
+	}
+
+	/* 3. AAD limit: the largest valid AAD and just over it, with and without payload */
+	for (i = 0; i < 3; i++) {
+		int pt = i == 0 ? 0 : i == 1 ? 1 : AEAD_MAXPT;
+
+		for (a = amax - 1; a <= amax + 17; a++)
+			aead_add(ccm, pt, a, 16, 16, 4);
+		aead_add(ccm, pt, 4095, 16, 16, 4);
+		aead_add(ccm, pt, 4096, 16, 16, 4);
+		aead_add(ccm, pt, 4097, 16, 16, 4);
+	}
+	aead_add(ccm, 0, 8192, 16, 16, 4);
+
+	/* 4. AES-192 / AES-256 */
+	for (k = 24; k <= 32; k += 8)
+		for (j = 0; j < 2; j++) {
+			aead_add(ccm, 16, j * 20, k, 16, 4);
+			for (i = 0; i < 2; i++)
+				aead_add(ccm, big[i], j * 20, k, 16, 4);
+		}
+
+	/* 5. shorter auth tags */
+	for (k = 4; k < 16; k += ccm ? 2 : 1) {
+		if (!ccm && k != 4 && k != 8 && k < 12)
+			continue;
+		for (j = 0; j < 2; j++) {
+			aead_add(ccm, 0, j * 20, 16, k, 4);
+			aead_add(ccm, 17, j * 20, 16, k, 4);
+			for (i = 0; i < 2; i++)
+				aead_add(ccm, big[i], j * 20, 16, k, 4);
+		}
+	}
+
+	/* 6. CCM length field L (nonce 15 - L bytes); L=2 limits the payload to 65535 */
+	if (ccm)
+		for (k = 2; k <= 8; k++)
+			for (j = 0; j < 2; j++) {
+				aead_add(ccm, 17, j * 20, 16, 16, k);
+				aead_add(ccm, 4081, j * 20, 16, 16, k);
+				aead_add(ccm, AEAD_MAXPT - 1, j * 20, 16, 16, k);
+				aead_add(ccm, AEAD_MAXPT, j * 20, 16, 16, k);
+			}
+}
+
+static int aead_sweep(int ccm)
+{
+	int i;
+
+	aead_build_cases(ccm);
+	printf("\n[AEAD sweep] %s: %d cases, AAD limit %d (payload > 0) / %d (payload 0)\n",
+	       ccm ? "ma35-optee-aes-ccm" : "ma35-optee-aes-gcm", ar_ncases,
+	       aead_aad_max(ccm), aead_aad_max(ccm) + 16);
+	for (i = 0; i < ar_ncases; i++)
+		if (aead_sweep_one(ccm, i, &ar_cases[i])) {
+			printf("  RESULT: FAIL at case %d of %d\n", i, ar_ncases);
+			return 1;
+		}
+	printf("  RESULT: PASS (%d cases)\n", ar_ncases);
+	return 0;
+}
+
+static int aead_repro_test(const char *which, int argc, char **argv)
+{
+	int ccm = !strcmp(which, "ccm"), ret;
+	struct aead_case c = { 0, 0, 16, 16, 0 };
+
+	if (!ccm && strcmp(which, "gcm") && strcmp(which, "all")) {
+		printf("usage: aead-repro gcm|ccm|all\n"
+		       "       aead-repro gcm|ccm pt_len [aad_len [key_bits [tag_len [ccm_L]]]]\n");
+		return 1;
+	}
+	if (argc <= 0 || !strcmp(which, "all")) {
+		if (!strcmp(which, "all"))
+			ret = aead_sweep(0) || aead_sweep(1);
+		else
+			ret = aead_sweep(ccm);
+		aead_authsize = AEAD_TAGLEN;
+		return ret;
+	}
+
+	c.pt = atoi(argv[0]);
+	if (argc > 1)
+		c.aad = atoi(argv[1]);
+	if (argc > 2)
+		c.keylen = atoi(argv[2]) / 8;
+	if (argc > 3)
+		c.tag = atoi(argv[3]);
+	c.ccm_l = ccm ? (argc > 4 ? atoi(argv[4]) : 4) : 0;
+	if (c.pt < 0 || c.aad < 0 || c.pt + c.aad + c.tag > AEAD_MAXBUF ||
+	    (c.keylen != 16 && c.keylen != 24 && c.keylen != 32) || c.tag < 4 || c.tag > 16 ||
+	    (ccm && (c.ccm_l < 2 || c.ccm_l > 8))) {
+		printf("usage: aead-repro gcm|ccm pt_len [aad_len [key_bits [tag_len [ccm_L]]]]\n"
+		       "  pt_len + aad_len + tag_len <= %d, key_bits 128/192/256, "
+		       "tag_len 4..16, ccm_L 2..8\n", AEAD_MAXBUF);
+		return 1;
+	}
+	ret = aead_sweep_one(ccm, 0, &c);
+	aead_authsize = AEAD_TAGLEN;
+	printf("  RESULT: %s\n", ret ? "FAIL" : "PASS");
+	return ret;
+}
+
 static void usage(const char *prog)
 {
 	printf("usage: %s <test> [args] [std]\n"
@@ -1347,6 +1726,9 @@ static void usage(const char *prog)
 	       "  ecb-noiv [alg]     AES ECB request without IV (default ma35-optee-ecb-aes)\n"
 	       "  aead <case>        AES GCM/CCM; run without <case> to list them\n"
 	       "  sha3-empty sha3|after  empty SHA3 input, then check that TSI still works\n"
+	       "  aead-repro gcm|ccm|all  GCM/CCM sweep: AAD/payload sizes up to 64 KB, DMA\n"
+	       "                     boundaries, AAD limit, key/tag sizes, CCM L; stops at the first error\n"
+	       "  aead-repro gcm|ccm pt_len [aad_len [key_bits [tag_len [ccm_L]]]]  one case\n"
 	       "  ecc-verify [single|conc [N]]  ECC verify, single process or two processes\n"
 	       "  hmac-empty         HMAC with an empty message\n"
 	       "  hash-legacy        sha1, md5 and sm3\n"
@@ -1388,6 +1770,8 @@ int main(int argc, char **argv)
 	}
 	if (!strcmp(cmd, "sha3-empty"))
 		return sha3_empty_test(argc > 2 ? argv[2] : "sha3");
+	if (!strcmp(cmd, "aead-repro"))
+		return aead_repro_test(argc > 2 ? argv[2] : "all", argc - 3, argv + 3);
 	if (!strcmp(cmd, "ecc-verify"))
 		return ecc_verify_test(argc > 2 ? argv[2] : "single", argc > 3 ? atoi(argv[3]) : 200);
 	if (!strcmp(cmd, "hmac-empty"))
