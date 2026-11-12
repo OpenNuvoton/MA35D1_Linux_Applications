@@ -122,7 +122,8 @@ static int aes_crypt(int encrypt, const unsigned char *in, size_t inlen,
 	struct sockaddr_alg sa = {
 		.salg_family = AF_ALG,
 		.salg_type = "skcipher",
-		.salg_name = "cbc(aes)"
+		/* Key Store keys need the MA35 driver; the generic name resolves to ARMv8 CE */
+		.salg_name = "ma35-optee-cbc-aes"
 	};
 	char cbuf[CMSG_SPACE(sizeof(uint32_t)) +
 		  CMSG_SPACE(sizeof(struct af_alg_iv) + sizeof(iv))] = {};
@@ -142,8 +143,12 @@ static int aes_crypt(int encrypt, const unsigned char *in, size_t inlen,
 	}
 
 	if (bind(tfmfd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-		perror("bind cbc(aes)");
-		goto out_close_tfm;
+		/* fall back to the non OP-TEE driver */
+		snprintf((char *)sa.salg_name, sizeof(sa.salg_name), "ma35-cbc-aes");
+		if (bind(tfmfd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
+			perror("bind ma35 cbc-aes");
+			goto out_close_tfm;
+		}
 	}
 
 	if (setsockopt(tfmfd, SOL_ALG, ALG_SET_KEY, key_ks,
